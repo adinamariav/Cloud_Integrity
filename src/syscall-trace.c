@@ -1,3 +1,4 @@
+#include <string.h>
 #include "vmi.h"
 
 vmi_event_t syscall_enter_event;
@@ -34,8 +35,162 @@ event_response_t syscall_step_cb(vmi_instance_t vmi, vmi_event_t *event) {
     return 0;
 }
 
+int get_arg_number(int syscall_id) {
+    char command[256] = "grep -hR 'SYSCALL_DEFINE.\\?(";
+    strcat(command, sys_index[syscall_id]);
+    strcat(command, ",' * /usr/src/linux-source-5.4.0/ | head -1 | sed 's/^SYSCALL_DEFINE\\([1-9]\\).*$/\\1/'");
+    int args_nr;
 
-event_response_t syscall_enter_cb(vmi_instance_t vmi, vmi_event_t *event){
+    FILE* fp = NULL;
+
+    fp = popen(command, "r");
+
+    if (fp == NULL)
+    {
+        printf("%s\n", "Failed to run command");
+        return -1;
+    }
+
+    fscanf(fp, "%d", &args_nr);
+    pclose(fp);
+
+    if (args_nr > 6)
+        return -1;
+
+    return args_nr;
+}
+
+#pragma region syscall_handlers
+
+void print_open_flags(int flags) {
+    if (!flags)
+        printf("%s", "O_RDONLY ");
+    if (flags & O_WRONLY)
+        printf("%s", "O_WRONLY ");
+    if (flags & O_RDWR)
+        printf("%s", "O_RDWR ");
+    if (flags & O_CREAT)
+        printf("%s", "O_CREAT ");
+    if (flags & O_EXCL)
+        printf("%s", "O_EXCL ");
+    if (flags & O_NOCTTY)
+        printf("%s", "O_NOCTTY ");
+    if (flags & O_TRUNC)
+        printf("%s", "O_TRUNC ");
+    if (flags & O_APPEND)
+        printf("%s", "O_APPEND ");
+    if (flags & O_NONBLOCK)
+        printf("%s", "O_NONBLOCK ");
+    if (flags & O_DSYNC)
+        printf("%s", "O_DSYNC ");
+    if (flags & __O_DIRECT)
+        printf("%s", "__O_DIRECT ");
+    if (flags & O_DIRECTORY)
+        printf("%s", "O_DIRECTORY ");
+    if (flags & O_CLOEXEC)
+        printf("%s", "O_CLOEXEC ");
+}
+
+void print_mprotect_flags(int flags) {
+    if (!flags)
+        printf("%s", "PROT_NONE ");
+    if (flags & PROT_READ)
+        printf("%s", "PROT_READ ");
+    if (flags & PROT_WRITE)
+        printf("%s", "PROT_WRITE ");
+    if (flags & PROT_EXEC)
+        printf("%s", "PROT_EXEC ");
+}
+
+void print_open(vmi_instance_t vmi, int pid, reg_t *regs) {
+    char *filename = NULL;
+    filename = vmi_read_str_va(vmi, regs[0], pid);
+
+    printf("filename: %s, mode: %u, flags: ", filename, (unsigned int)regs[1]);
+    print_open_flags((unsigned int)regs[2]);
+    free(filename);
+}
+
+void print_openat(vmi_instance_t vmi, int pid, reg_t *regs) {
+    char *filename = NULL;
+    filename = vmi_read_str_va(vmi, regs[1], pid);
+
+    printf("DFD: %u, filename: %s, mode: %u, flags: ", (unsigned int)regs[0], filename, (unsigned int)regs[2]);
+    print_open_flags((unsigned int)regs[3]);
+    free(filename);
+}
+
+void print_write(vmi_instance_t vmi, int pid, reg_t *regs) {
+    char *buffer = NULL;
+    buffer = vmi_read_str_va(vmi, regs[1], pid);
+
+    printf("fd: %u, buf: %s, count: %u", (unsigned int)regs[0], buffer, (unsigned int)regs[2]);
+    free(buffer);
+}
+
+void print_execve(vmi_instance_t vmi, int pid, reg_t *regs) {
+    char *filename = NULL;
+    filename = vmi_read_str_va(vmi, regs[0], pid);
+    char *argv = NULL;
+    argv = vmi_read_str_va(vmi, regs[1], pid);
+    char *envp = NULL;
+    envp = vmi_read_str_va(vmi, regs[2], pid);
+
+    printf("filename: %s, argv[0]: %s, envp[0]: %u", filename, argv, envp);
+    free(filename);
+    free(argv);
+    free(envp);
+}
+
+void print_mprotect(vmi_instance_t vmi, int pid, reg_t *regs) {
+    printf("start addr: 0x%lx, len: %u, prot: ", (unsigned long)regs[0], (unsigned int)regs[1]);
+
+    print_mprotect_flags((unsigned int)regs[2]);
+}
+
+#pragma endregion
+
+void print_args(vmi_instance_t vmi, vmi_event_t *event, int pid, int syscall_id) {
+    int args_number = 6;
+    
+    if (args_number <= 0)
+        return;
+    
+    reg_t regs[6];
+
+    vmi_get_vcpureg(vmi, &regs[0], RDI, event->vcpu_id);
+    vmi_get_vcpureg(vmi, &regs[1], RSI, event->vcpu_id);
+    vmi_get_vcpureg(vmi, &regs[2], RDX, event->vcpu_id);
+    vmi_get_vcpureg(vmi, &regs[3], R10, event->vcpu_id);
+    vmi_get_vcpureg(vmi, &regs[4], R8, event->vcpu_id);
+    vmi_get_vcpureg(vmi, &regs[5], R9, event->vcpu_id);
+
+    switch (syscall_id) {
+        case 1:
+            print_write(vmi, pid, regs);
+            break;
+        case 2:
+            print_open(vmi, pid, regs);
+            break;
+        case 10:
+            print_mprotect(vmi, pid, regs);
+            break;
+        case 59:
+            print_execve(vmi, pid, regs);
+            break;
+        case 257:
+            print_openat(vmi, pid, regs);
+            break;
+        
+        default:
+            for (int i = 0; i < args_number; i++) {
+                printf("%u ", (unsigned int)regs[i]);
+            }
+            break;
+    }
+}
+
+event_response_t syscall_enter_cb(vmi_instance_t vmi, vmi_event_t *event) {
 #ifdef MEM_EVENT
     if (event->mem_event.gla == virt_lstar) {
 #else
@@ -46,22 +201,19 @@ event_response_t syscall_enter_cb(vmi_instance_t vmi, vmi_event_t *event){
         vmi_get_vcpureg(vmi, &rdi, RDI, event->vcpu_id);
         vmi_get_vcpureg(vmi, &cr3, CR3, event->vcpu_id);
 
-        
         vmi_pid_t pid = -1;
         vmi_dtb_to_pid(vmi, cr3, &pid);
 
         uint16_t _index = (uint16_t)rax;
         if (_index >= num_sys) {
             printf("Process[%d]: unknown syscall id: %d\n", pid, _index);
-
-        } else if (_index == 90 ) {
-            char *argname = NULL;
-            argname = vmi_read_str_va(vmi, rdi, pid);
-            printf("Process[%d]: Syscall %s happend, 1st argument=%s\n", pid, sys_index[_index], argname);
-        } else {
-            printf("Process[%d]: Syscall %s happened, 1st argument=%u\n", pid, sys_index[_index], (unsigned int)rdi);
         }
-
+        else {
+            printf("PID[%d]: %s with args ", pid, sys_index[_index]);
+            print_args(vmi, event, pid, _index);
+        }
+        
+        printf("\n");
     }
 
     /**
@@ -80,8 +232,9 @@ event_response_t syscall_enter_cb(vmi_instance_t vmi, vmi_event_t *event){
     /**
      * set the single event to execute one instruction
      */
+//    vmi_step_mem_event();
     vmi_step_event(vmi, event, event->vcpu_id, 1, NULL);
-    vmi_register_event(vmi, &syscall_step_event);
+//    vmi_register_event(vmi, &syscall_step_event);
     return VMI_EVENT_RESPONSE_NONE;
 }
 
