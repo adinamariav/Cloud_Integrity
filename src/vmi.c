@@ -18,15 +18,9 @@ int main (int argc, char *argv[]) {
                 printf("Supported Mode: \n");
                 printf("process-list:		List the processes\n");
                 printf("module-list:		List the modules\n");
-                printf("syscall-check:		Check if any syscall is hooked\n");
-                printf("kernel-check:		Check if any kernel function is compromised\n");
-                printf("idt-check:		Check if any interrupt handler is hooked\n");
                 printf("network-check:		Check if any network connection is hidden\n");
                 printf("syscall-trace:		Trace the system call made by any processes\n");
                 printf("socketapi-trace:	Trace the socket API made by any processes\n");
-                printf("driverapi-trace:	Trace the kernel device driver API made by any processes\n");
-                printf("process-block:		Block a process from launching if its image matches something\n");
-                printf("sleepapi-nop:		NOP the sleep calls to specified processes\n");
                 printf("process-kill:		Kill a process at runtime given its pid\n");
                 return 0;
             case 'v':
@@ -55,33 +49,20 @@ int main (int argc, char *argv[]) {
         return 0;
     } 
 
-
     printf("Introspect VM %s with the Mode %s\n", vm_name, mode);
 
     if (!strcmp(mode, "process-list")) {
         introspect_process_list(vm_name);
     } else if (!strcmp(mode, "module-list")) {
         introspect_module_list(vm_name);
-    } else if (!strcmp(mode, "syscall-check")) {
-        introspect_syscall_check(vm_name);
-    } else if (!strcmp(mode, "kernel-check")) {
-        introspect_kernel_check(vm_name);
-    } else if (!strcmp(mode, "idt-check")) {
-        introspect_idt_check(vm_name);
     } else if (!strcmp(mode, "network-check")) {
         introspect_network_check(vm_name);
-    } else if (!strcmp(mode, "procfs-check")) {
-        introspect_procfs_check(vm_name);
     } else if (!strcmp(mode, "syscall-trace")) {
         introspect_syscall_trace(vm_name);
     } else if (!strcmp(mode, "socketapi-trace")) {
         introspect_socketapi_trace(vm_name);
-    } else if (!strcmp(mode, "driverapi-trace")) {
-        introspect_driverapi_trace(vm_name);
-    } else if (!strcmp(mode, "process-block")) {
-        introspect_process_block(vm_name);
-    } else if (!strcmp(mode, "sleepapi-nop")) {
-        introspect_sleepapi_nop(vm_name);
+    } else if (!strcmp(mode, "trap-exec")) {
+        introspect_trap_exec(vm_name);
     } else if (!strcmp(mode, "process-kill")) {
         if (arg == NULL) {
             printf("Missing process id to kill\n");

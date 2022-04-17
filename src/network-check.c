@@ -61,21 +61,23 @@ int introspect_network_check(char *name)
         while (!((unsigned long)node_addr & 1)) {
             vmi_read_16_va(vmi, node_addr+sportOffset, 0, &sport);
             uint16_t port = ((sport & 0xFF) << 8) + (sport >> 8);
-            printf("%" PRIu16 "\n",port);
+            if (port != 0)
+                printf("%" PRIu16 "\n",port);
             vmi_read_addr_va(vmi, node_addr+nextOffset, 0, &node_addr);
         }
     }
 
     printf("UDP ports: \n");
     addr_t hash_addr;
-    for (i=0; i<1024; i++) {
+    for (i=0; i<10; i++) {
         vmi_read_addr_va(vmi, udp_table_addr+uhlistOffset, 0, &hash_addr);
         vmi_read_addr_va(vmi, hash_addr+i*uhlistLength+ufirstOffset, 0, &node_addr);
 
         while (!((unsigned long)node_addr & 1)) {
             vmi_read_16_va(vmi, node_addr+sportOffset, 0, &sport);
             uint16_t port = ((sport & 0xFF) << 8) + (sport >> 8);
-            printf("%" PRIu16 "\n",port);
+            if (port != 0)
+                printf("%" PRIu16 "\n",port);
             vmi_read_addr_va(vmi, node_addr+nextOffset, 0, &node_addr);
         }
     }

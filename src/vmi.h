@@ -51,24 +51,12 @@ int introspect_process_list(char *name);
 
 int introspect_module_list(char *name);
 
-int introspect_syscall_check(char *name);
-
-int introspect_kernel_check(char *name);
-
-int introspect_idt_check(char *name);
-
 int introspect_network_check(char *name);
-
-int introspect_procfs_check(char *name);
 
 int introspect_syscall_trace(char *name);
 
 int introspect_socketapi_trace(char *name);
 
-int introspect_driverapi_trace(char *name);
-
-int introspect_sleepapi_nop(char *name);
-
-int introspect_process_block(char *name);
+int introspect_trap_exec(char *name);
 
 int introspect_process_kill(char *name, char *arg);

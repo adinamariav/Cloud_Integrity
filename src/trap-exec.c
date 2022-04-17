@@ -8,17 +8,19 @@ uint8_t backup_byte;
 uint8_t trap = 0xCC;
 
 event_response_t singlestep_cb(vmi_instance_t vmi, vmi_event_t *event) {
+    printf("%s\n", "step");
 	vmi_write_8_va(vmi, execve_addr, 0, &trap);
-	return VMI_EVENT_RESPONSE_TOGGLE_SINGLESTEP;
+  
+  	return VMI_EVENT_RESPONSE_TOGGLE_SINGLESTEP;
 }
 
 event_response_t trap_cb(vmi_instance_t vmi, vmi_event_t *event) {
 
+    printf("%s\n", "trap");
     reg_t rdi, cr3;
 
     vmi_write_8_va(vmi, execve_addr, 0, &backup_byte);
     vmi_get_vcpureg(vmi, &rdi, RDI, event->vcpu_id);
-
     vmi_get_vcpureg(vmi, &cr3, CR3, event->vcpu_id);
 
     vmi_pid_t pid = -1;
@@ -30,6 +32,8 @@ event_response_t trap_cb(vmi_instance_t vmi, vmi_event_t *event) {
     printf("Received a trap event for syscall execve, pid %d, filename %s!\n", pid, filename);
 
     event->interrupt_event.reinject = 0;
+    //vmi_clear_event(vmi, event, NULL);
+    vmi_step_event(vmi, event, event->vcpu_id, 1,  singlestep_cb);
 
     free(filename);
     return VMI_EVENT_RESPONSE_TOGGLE_SINGLESTEP;
@@ -47,7 +51,7 @@ void set_execve_breakpoint(vmi_instance_t vmi) {
     SETUP_INTERRUPT_EVENT(&trap_event, trap_cb);
     SETUP_SINGLESTEP_EVENT(&singlestep_event, 1, singlestep_cb, 0);
 	vmi_register_event(vmi, &trap_event);
-    vmi_register_event(vmi, &singlestep_event);
+ //   vmi_register_event(vmi, &singlestep_event);
 
     vmi_resume_vm(vmi);
 }
