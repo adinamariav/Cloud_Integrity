@@ -1,67 +1,23 @@
+#include <stdlib.h>
 #include <string.h>
-#include "vmi.h"
+#include <fcntl.h>
+#include <stdio.h>
+#include <signal.h>
 
-vmi_event_t syscall_enter_event;
-vmi_event_t syscall_step_event;
+#include <libvmi/libvmi.h>
+#include <libvmi/events.h>
 
-reg_t virt_lstar;
-addr_t phys_lstar;
+reg_t cr3;
+reg_t lstar;
+vmi_event_t cr3_event;
+vmi_event_t msr_syscall_event;
 
+bool mem_events_registered;
 int num_sys = 0;
 char **sys_index = NULL;
-
-#ifndef MEM_EVENT
-uint32_t syscall_orig_data;
-#endif
-
-event_response_t syscall_step_cb(vmi_instance_t vmi, vmi_event_t *event) {
-    /**
-     * enable the syscall entry interrupt
-     */
-#ifdef MEM_EVENT
-    vmi_register_event(vmi, &syscall_enter_event);
-#else
-    syscall_enter_event.interrupt_event.reinject = 1;
-    if (set_breakpoint(vmi, virt_lstar, 0) < 0) {
-        printf("Could not set break points\n");
-        exit(1);
-    }
-#endif
-
-    /** 
-     * disable the single event
-     */
-    vmi_clear_event(vmi, &syscall_step_event, NULL);
-    return 0;
-}
-
-int get_arg_number(int syscall_id) {
-    char command[256] = "grep -hR 'SYSCALL_DEFINE.\\?(";
-    strcat(command, sys_index[syscall_id]);
-    strcat(command, ",' * /usr/src/linux-source-5.4.0/ | head -1 | sed 's/^SYSCALL_DEFINE\\([1-9]\\).*$/\\1/'");
-    int args_nr;
-
-    FILE* fp = NULL;
-
-    fp = popen(command, "r");
-
-    if (fp == NULL)
-    {
-        printf("%s\n", "Failed to run command");
-        return -1;
-    }
-
-    fscanf(fp, "%d", &args_nr);
-    pclose(fp);
-
-    if (args_nr > 6)
-        return -1;
-
-    return args_nr;
-}
+pid_t last_pid;
 
 #pragma region syscall_handlers
-
 void print_open_flags(int flags) {
     if (!flags)
         printf("%s", "O_RDONLY ");
@@ -102,55 +58,66 @@ void print_mprotect_flags(int flags) {
         printf("%s", "PROT_EXEC ");
 }
 
-void print_open(vmi_instance_t vmi, int pid, reg_t *regs) {
+void print_open(vmi_instance_t vmi, int pid, reg_t *regs, FILE* fp) {
     char *filename = NULL;
     filename = vmi_read_str_va(vmi, regs[0], pid);
 
     printf("filename: %s, mode: %u, flags: ", filename, (unsigned int)regs[1]);
     print_open_flags((unsigned int)regs[2]);
+    fprintf(fp, "%s, %u, %u, %u, %u, %u\n", filename, (unsigned int)regs[1], (unsigned int)regs[2], (unsigned int)regs[3], (unsigned int)regs[4], (unsigned int)regs[5]);
+
     free(filename);
 }
 
-void print_openat(vmi_instance_t vmi, int pid, reg_t *regs) {
+void print_openat(vmi_instance_t vmi, int pid, reg_t *regs, FILE* fp) {
     char *filename = NULL;
     filename = vmi_read_str_va(vmi, regs[1], pid);
 
     printf("DFD: %u, filename: %s, mode: %u, flags: ", (unsigned int)regs[0], filename, (unsigned int)regs[2]);
+    fprintf(fp, "%u, %s, %u, %u, %u, %u\n", (unsigned int)regs[0], filename, (unsigned int)regs[2], (unsigned int)regs[3], (unsigned int)regs[4], (unsigned int)regs[5]);
     print_open_flags((unsigned int)regs[3]);
     free(filename);
 }
 
-void print_write(vmi_instance_t vmi, int pid, reg_t *regs) {
+void print_write(vmi_instance_t vmi, int pid, reg_t *regs, FILE* fp) {
     char *buffer = NULL;
     buffer = vmi_read_str_va(vmi, regs[1], pid);
 
     printf("fd: %u, buf: %s, count: %u", (unsigned int)regs[0], buffer, (unsigned int)regs[2]);
+    fprintf(fp, "%u, %s, %u, %u, %u, %u\n", (unsigned int)regs[0], buffer, (unsigned int)regs[2], (unsigned int)regs[3], (unsigned int)regs[4], (unsigned int)regs[5]);
     free(buffer);
 }
 
-void print_execve(vmi_instance_t vmi, int pid, reg_t *regs) {
+void print_execve(vmi_instance_t vmi, int pid, reg_t *regs, FILE* fp) {
     char *filename = NULL;
+
+    char buffer[1000];
+
+    vmi_pause_vm(vmi);
+
     filename = vmi_read_str_va(vmi, regs[0], pid);
     char *argv = NULL;
     argv = vmi_read_str_va(vmi, regs[1], pid);
     char *envp = NULL;
     envp = vmi_read_str_va(vmi, regs[2], pid);
 
-    printf("filename: %s, argv[0]: %s, envp[0]: %u", filename, argv, envp);
+    printf(" last-pid: %d ", pid);
+    printf("filename: %s", filename);
+    fprintf(fp, "%s, %u, %u, %u, %u, %u\n", filename, (unsigned int)regs[0], (unsigned int)regs[1], (unsigned int)regs[2], (unsigned int)regs[3], (unsigned int)regs[5]);
+
+    vmi_resume_vm(vmi);
     free(filename);
     free(argv);
     free(envp);
 }
 
-void print_mprotect(vmi_instance_t vmi, int pid, reg_t *regs) {
+void print_mprotect(vmi_instance_t vmi, int pid, reg_t *regs, FILE* fp) {
     printf("start addr: 0x%lx, len: %u, prot: ", (unsigned long)regs[0], (unsigned int)regs[1]);
-
     print_mprotect_flags((unsigned int)regs[2]);
+    fprintf(fp, "0x%lx, %u, %u, %u, %u, %u\n", (unsigned long)regs[0], (unsigned int)regs[1], (unsigned int)regs[2], (unsigned int)regs[3], (unsigned int)regs[4], (unsigned int)regs[5]);
 }
 
-#pragma endregion
-
-void print_args(vmi_instance_t vmi, vmi_event_t *event, int pid, int syscall_id) {
+void print_args(vmi_instance_t vmi, vmi_event_t *event, int pid, int syscall_id, FILE* fp) {
     int args_number = 6;
     
     if (args_number <= 0)
@@ -167,88 +134,77 @@ void print_args(vmi_instance_t vmi, vmi_event_t *event, int pid, int syscall_id)
 
     switch (syscall_id) {
         case 1:
-            print_write(vmi, pid, regs);
+            print_write(vmi, pid, regs, fp);
             break;
         case 2:
-            print_open(vmi, pid, regs);
+            print_open(vmi, pid, regs, fp);
             break;
         case 10:
-            print_mprotect(vmi, pid, regs);
+            print_mprotect(vmi, pid, regs, fp);
             break;
         case 59:
-            print_execve(vmi, pid, regs);
+            print_execve(vmi, last_pid, regs, fp);
+            break;
+        case 57:
+            last_pid = pid;
             break;
         case 257:
-            print_openat(vmi, pid, regs);
+            print_openat(vmi, pid, regs, fp);
             break;
         
         default:
             for (int i = 0; i < args_number; i++) {
                 printf("%u ", (unsigned int)regs[i]);
             }
+            fprintf(fp, "%u, %u, %u, %u, %u, %u\n", (unsigned int)regs[0], (unsigned int)regs[1], (unsigned int)regs[2], (unsigned int)regs[3], (unsigned int)regs[4], (unsigned int)regs[5]);
+            
             break;
     }
 }
+#pragma endregion
 
-event_response_t syscall_enter_cb(vmi_instance_t vmi, vmi_event_t *event) {
-#ifdef MEM_EVENT
-    if (event->mem_event.gla == virt_lstar) {
-#else
-    if (event->interrupt_event.gla == virt_lstar) {
-#endif
-        reg_t rdi, rax, cr3;
-        vmi_get_vcpureg(vmi, &rax, RAX, event->vcpu_id);
-        vmi_get_vcpureg(vmi, &rdi, RDI, event->vcpu_id);
-        vmi_get_vcpureg(vmi, &cr3, CR3, event->vcpu_id);
-
-        vmi_pid_t pid = -1;
-        vmi_dtb_to_pid(vmi, cr3, &pid);
-
-        uint16_t _index = (uint16_t)rax;
-        if (_index >= num_sys) {
-            printf("Process[%d]: unknown syscall id: %d\n", pid, _index);
-        }
-        else {
-            printf("PID[%d]: %s with args ", pid, sys_index[_index]);
-            print_args(vmi, event, pid, _index);
-        }
-        
-        printf("\n");
+event_response_t syscall_cb(vmi_instance_t vmi, vmi_event_t *event) {
+    
+    if ( event->mem_event.offset != (VMI_BIT_MASK(0,11) & lstar) ) {
+        vmi_clear_event(vmi, event, NULL);
+        vmi_step_event(vmi, event, event->vcpu_id, 1, NULL);
+        return 0;
     }
 
-    /**
-     * disable the syscall entry interrupt
-     */
-#ifdef MEM_EVENT
+    reg_t rdi, rax, cr3;
+    vmi_pid_t pid = -1;
+    FILE* fp = fopen("syscall-trace.csv", "a");
+
+    vmi_get_vcpureg(vmi, &rax, RAX, event->vcpu_id);
+    vmi_get_vcpureg(vmi, &rdi, RDI, event->vcpu_id);
+    vmi_get_vcpureg(vmi, &cr3, CR3, event->vcpu_id);
+
+    
+    vmi_dtb_to_pid(vmi, cr3, &pid);
+
+    uint16_t _index = (uint16_t)rax;
+
+    if (_index >= num_sys) {
+        printf("Process[%d]: unknown syscall id: %d\n", pid, _index);
+        fprintf(fp, "%d, %d, , ", pid, _index);
+    }
+    else {
+        printf("PID[%d]: %s with args ", pid, sys_index[_index]);
+        fprintf(fp, "%d, %d, %s, ", pid, _index, sys_index[_index]);
+    }
+
+    print_args(vmi, event, pid, _index, fp);
+
+    fclose(fp);
+    printf("\n");
+
     vmi_clear_event(vmi, event, NULL);
-#else
-    event->interrupt_event.reinject = 0;
-    if (VMI_FAILURE == vmi_write_32_va(vmi, virt_lstar, 0, &syscall_orig_data)) {
-        printf("failed to write memory.\n");
-        exit(1);
-    }
-#endif
-
-    /**
-     * set the single event to execute one instruction
-     */
-//    vmi_step_mem_event();
     vmi_step_event(vmi, event, event->vcpu_id, 1, NULL);
-//    vmi_register_event(vmi, &syscall_step_event);
-    return VMI_EVENT_RESPONSE_NONE;
+
+    return 0;
 }
 
-int introspect_syscall_trace (char *name) {
-
-    struct sigaction act;
-    act.sa_handler = close_handler;
-    act.sa_flags = 0;
-    sigemptyset(&act.sa_mask);
-    sigaction(SIGHUP,  &act, NULL);
-    sigaction(SIGTERM, &act, NULL);
-    sigaction(SIGINT,  &act, NULL);
-    sigaction(SIGALRM, &act, NULL);
-
+void read_syscall_table() {
     char _line[256];
     char _name[256];
     int _index[256];
@@ -264,16 +220,71 @@ int introspect_syscall_trace (char *name) {
         strcpy(sys_index[num_sys-1], _name);
     }
     fclose(_file);
+}
 
+void create_csv_file() {
+    FILE *fp = fopen("syscall-trace.csv", "w");
+    fprintf(fp, "PID, SyscallID, Syscall, RDI, RSI, RDX, R10, R8, R9\n");
+    fclose(fp);
+}
+
+bool register_lstar_mem_event(vmi_instance_t vmi, vmi_event_t *event) {
+    addr_t cr3 = event->reg_event.value;
+    addr_t phys_lstar = 0;
+    addr_t phys_sysenter_ip = 0;
+    bool ret = false;
+    addr_t phys_vsyscall = 0;
+
+    lstar = event->x86_regs->msr_lstar;
+
+    vmi_pagetable_lookup(vmi, event->x86_regs->cr3, lstar, &phys_lstar);
+    printf("Physical LSTAR == %llx\n", (unsigned long long)phys_lstar);
+
+    msr_syscall_event.version = VMI_EVENTS_VERSION;
+    msr_syscall_event.type = VMI_EVENT_MEMORY;
+    msr_syscall_event.mem_event.gfn = phys_lstar >> 12;
+    msr_syscall_event.mem_event.in_access = VMI_MEMACCESS_X;
+    msr_syscall_event.callback=syscall_cb;
+
+    if ( phys_lstar && VMI_SUCCESS == vmi_register_event(vmi, &msr_syscall_event) )
+        ret = true;
+    else
+        printf("Failed to register memory event on MSR_LSTAR page\n");
+
+    return ret;
+}
+
+event_response_t cr3_register_task_callback(vmi_instance_t vmi, vmi_event_t *event) {
+    if ( !mem_events_registered )
+        mem_events_registered = register_lstar_mem_event(vmi, event);
+    vmi_clear_event(vmi, &cr3_event, NULL);
+    return 0;
+}
+
+static int interrupted = 0;
+static void close_handler(int sig) {
+    interrupted = sig;
+}
+
+int introspect_syscall_trace (char *name) {
     vmi_instance_t vmi = NULL;
+    status_t status = VMI_SUCCESS;
+    struct sigaction act;
     vmi_init_data_t *init_data = NULL;
-    uint8_t init = VMI_INIT_DOMAINNAME | VMI_INIT_EVENTS, config_type = VMI_CONFIG_GLOBAL_FILE_ENTRY;
-    void *input = NULL, *config = NULL;
-    vmi_init_error_t *error = NULL;
+
+    act.sa_handler = close_handler;
+    act.sa_flags = 0;
+
+    read_syscall_table();
+
+    sigemptyset(&act.sa_mask);
+    sigaction(SIGHUP,  &act, NULL);
+    sigaction(SIGTERM, &act, NULL);
+    sigaction(SIGINT,  &act, NULL);
+    sigaction(SIGALRM, &act, NULL);
+
     vmi_mode_t mode;
-    
-    /* initialize the libvmi library */
-    if (VMI_FAILURE == vmi_get_access_mode(NULL, name, VMI_INIT_DOMAINNAME| VMI_INIT_EVENTS, init_data, &mode)) {
+    if (VMI_FAILURE == vmi_get_access_mode(NULL, name, VMI_INIT_DOMAINNAME, init_data, &mode)) {
         printf("Failed to find a supported hypervisor with LibVMI\n");
         return 1;
     }
@@ -289,112 +300,48 @@ int introspect_syscall_trace (char *name) {
         return 1;
     }
 
-    if ( VMI_OS_UNKNOWN == vmi_init_os(vmi, VMI_CONFIG_GLOBAL_FILE_ENTRY, config, error) ) {
+    if ( VMI_OS_UNKNOWN == vmi_init_os(vmi, VMI_CONFIG_GLOBAL_FILE_ENTRY, NULL, NULL) ) {
         printf("Failed to init os.\n");
         vmi_destroy(vmi);
         return 1;
     }
 
-
     printf("LibVMI init succeeded!\n");
 
-    memset(&syscall_enter_event, 0, sizeof(vmi_event_t));
+    memset(&cr3_event, 0, sizeof(vmi_event_t));
+    cr3_event.version = VMI_EVENTS_VERSION;
+    cr3_event.type = VMI_EVENT_REGISTER;
+    cr3_event.callback = cr3_register_task_callback;
+    cr3_event.reg_event.reg = CR3;
+    cr3_event.reg_event.in_access = VMI_REGACCESS_W;
 
-#ifdef MEM_EVENT
-    if (VMI_FAILURE ==  vmi_pause_vm(vmi)) {
-        fprintf(stderr, "Failed to pause vm\n");
-        return 1;
-    }
+    create_csv_file();
 
-    if (VMI_FAILURE == vmi_get_vcpureg(vmi, &virt_lstar, MSR_LSTAR, 0)) {
-        fprintf(stderr, "Failed to get current RIP\n");
-        return 1;
-    }
-
-    uint64_t cr3;
-    if (VMI_FAILURE == vmi_get_vcpureg(vmi, &cr3, CR3, 0)) {
-        fprintf(stderr, "Failed to get current CR3\n");
-        return 1;
-    }
-    uint64_t dtb = cr3 & ~(0xfff);
-
-    uint64_t paddr;
-    if (VMI_FAILURE == vmi_pagetable_lookup(vmi, dtb, virt_lstar, &paddr)) {
-        fprintf(stderr, "Failed to find current paddr\n");
-        return 1;
-    }
-
-    uint64_t gfn = paddr >> 12;
-
-    SETUP_MEM_EVENT(&syscall_enter_event, gfn, VMI_MEMACCESS_X, syscall_enter_cb, false);
-
-
-    printf("Setting X memory event at LSTAR 0x%"PRIx64", GPA 0x%"PRIx64", GFN 0x%"PRIx64"\n",
-           virt_lstar, paddr, gfn);
-
-    if (VMI_FAILURE == vmi_register_event(vmi, &syscall_enter_event)) {
-        fprintf(stderr, "Failed to register mem event\n");
-        return 1;
-    }
-
-    // resuming
-    if (VMI_FAILURE == vmi_resume_vm(vmi)) {
-        fprintf(stderr, "Failed to resume vm\n");
-        return 1;
-    }
-
-#else
-    /**
-     * iniialize the interrupt event for INT3.
-     */
-    syscall_enter_event.type = VMI_EVENT_INTERRUPT;
-    syscall_enter_event.interrupt_event.intr = INT3;
-    syscall_enter_event.callback = syscall_enter_cb;
-#endif
-
-    /**
-     * iniialize the single step event.
-     */
-    memset(&syscall_step_event, 0, sizeof(vmi_event_t));
-    SETUP_SINGLESTEP_EVENT(&syscall_step_event, 1, syscall_step_cb, 0);
-
-#ifndef MEM_EVENT
-    /**
-     * store the original data for syscall entry function
-     */
-    if (VMI_FAILURE == vmi_read_32_va(vmi, virt_lstar, 0, &syscall_orig_data)) {
-        printf("failed to read the original data.\n");
-        vmi_destroy(vmi);
-        return -1;
-    }
-
-    /**
-     * insert breakpoint into the syscall entry function
-     */
-    if (set_breakpoint(vmi, virt_lstar, 0) < 0) {
-        printf("Could not set break points\n");
-        goto exit;
-    }
-#endif
-
-    while(!interrupted){
-        if (vmi_events_listen(vmi, 1000) != VMI_SUCCESS) {
-            printf("Error waiting for events, quitting...\n");
-            interrupted = -1;
+    if ( VMI_SUCCESS == vmi_register_event(vmi, &cr3_event) ) {
+        while (!interrupted) {
+            status = vmi_events_listen(vmi,500);
+            if (status != VMI_SUCCESS) {
+                printf("Error waiting for events, quitting...\n");
+                interrupted = -1;
+            }
         }
     }
 
-exit:
+    vmi_pause_vm(vmi);
 
-#ifndef MEM_EVENT
-    /**
-     * write back the original data
-     */
-    if (VMI_FAILURE == vmi_write_32_va(vmi, virt_lstar, 0, &syscall_orig_data)) {
-        printf("failed to write back the original data.\n");
-    }
-#endif
-    vmi_clear_event(vmi, &syscall_enter_event, NULL);
+    if ( vmi_are_events_pending(vmi) > 0 )
+        vmi_events_listen(vmi, 0);
+
+    vmi_clear_event(vmi, &cr3_event, NULL);
+    vmi_clear_event(vmi, &msr_syscall_event, NULL);
+    vmi_resume_vm(vmi);
+
     vmi_destroy(vmi);
+
+    if (init_data) {
+        free(init_data->entry[0].data);
+        free(init_data);
+    }
+
     return 0;
 }
