@@ -64,7 +64,6 @@ void print_open(vmi_instance_t vmi, int pid, reg_t *regs, FILE* fp) {
 
     printf("filename: %s, mode: %u, flags: ", filename, (unsigned int)regs[1]);
     print_open_flags((unsigned int)regs[2]);
-    fprintf(fp, "%s, %u, %u, %u, %u, %u\n", filename, (unsigned int)regs[1], (unsigned int)regs[2], (unsigned int)regs[3], (unsigned int)regs[4], (unsigned int)regs[5]);
 
     free(filename);
 }
@@ -74,7 +73,7 @@ void print_openat(vmi_instance_t vmi, int pid, reg_t *regs, FILE* fp) {
     filename = vmi_read_str_va(vmi, regs[1], pid);
 
     printf("DFD: %u, filename: %s, mode: %u, flags: ", (unsigned int)regs[0], filename, (unsigned int)regs[2]);
-    fprintf(fp, "%u, %s, %u, %u, %u, %u\n", (unsigned int)regs[0], filename, (unsigned int)regs[2], (unsigned int)regs[3], (unsigned int)regs[4], (unsigned int)regs[5]);
+
     print_open_flags((unsigned int)regs[3]);
     free(filename);
 }
@@ -84,7 +83,6 @@ void print_write(vmi_instance_t vmi, int pid, reg_t *regs, FILE* fp) {
     buffer = vmi_read_str_va(vmi, regs[1], pid);
 
     printf("fd: %u, buf: %s, count: %u", (unsigned int)regs[0], buffer, (unsigned int)regs[2]);
-    fprintf(fp, "%u, %s, %u, %u, %u, %u\n", (unsigned int)regs[0], buffer, (unsigned int)regs[2], (unsigned int)regs[3], (unsigned int)regs[4], (unsigned int)regs[5]);
     free(buffer);
 }
 
@@ -103,7 +101,6 @@ void print_execve(vmi_instance_t vmi, int pid, reg_t *regs, FILE* fp) {
 
     printf(" last-pid: %d ", pid);
     printf("filename: %s", filename);
-    fprintf(fp, "%s, %u, %u, %u, %u, %u\n", filename, (unsigned int)regs[0], (unsigned int)regs[1], (unsigned int)regs[2], (unsigned int)regs[3], (unsigned int)regs[5]);
 
     vmi_resume_vm(vmi);
     free(filename);
@@ -114,7 +111,6 @@ void print_execve(vmi_instance_t vmi, int pid, reg_t *regs, FILE* fp) {
 void print_mprotect(vmi_instance_t vmi, int pid, reg_t *regs, FILE* fp) {
     printf("start addr: 0x%lx, len: %u, prot: ", (unsigned long)regs[0], (unsigned int)regs[1]);
     print_mprotect_flags((unsigned int)regs[2]);
-    fprintf(fp, "0x%lx, %u, %u, %u, %u, %u\n", (unsigned long)regs[0], (unsigned int)regs[1], (unsigned int)regs[2], (unsigned int)regs[3], (unsigned int)regs[4], (unsigned int)regs[5]);
 }
 
 void print_args(vmi_instance_t vmi, vmi_event_t *event, int pid, int syscall_id, FILE* fp) {
@@ -156,10 +152,11 @@ void print_args(vmi_instance_t vmi, vmi_event_t *event, int pid, int syscall_id,
             for (int i = 0; i < args_number; i++) {
                 printf("%u ", (unsigned int)regs[i]);
             }
-            fprintf(fp, "%u, %u, %u, %u, %u, %u\n", (unsigned int)regs[0], (unsigned int)regs[1], (unsigned int)regs[2], (unsigned int)regs[3], (unsigned int)regs[4], (unsigned int)regs[5]);
             
             break;
     }
+
+    fprintf(fp, "%u, %u, %u, %u, %u, %u\n", (unsigned int)regs[0], (unsigned int)regs[1], (unsigned int)regs[2], (unsigned int)regs[3], (unsigned int)regs[4], (unsigned int)regs[5]);
 }
 #pragma endregion
 
