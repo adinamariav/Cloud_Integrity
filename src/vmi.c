@@ -5,6 +5,8 @@ int main (int argc, char *argv[]) {
     char *vm_name = NULL;
     char *mode = NULL;
     char *arg = NULL;
+    bool learning_mode = true;
+    int window_size = 10;
 
     /**
      * Parsing Parameters
@@ -19,7 +21,7 @@ int main (int argc, char *argv[]) {
                 printf("process-list:		List the processes\n");
                 printf("module-list:		List the modules\n");
                 printf("network-check:		Check if any network connection is hidden\n");
-                printf("syscall-trace:		Trace the system call made by any processes\n");
+                printf("syscall-trace:		Trace the system calls made by any processes. Must be followed by -l [learning] (default) or -a [analyzing], and by -w [window size]\n");
                 printf("socketapi-trace:	Trace the socket API made by any processes\n");
                 printf("process-kill:		Kill a process at runtime given its pid\n");
                 return 0;
@@ -31,6 +33,15 @@ int main (int argc, char *argv[]) {
                 break;
             case 'r':
                 arg = optarg;
+                break;
+            case 'l':
+                learning_mode = true;
+                break;
+            case 'a':
+                learning_mode = false;
+                break;
+            case 'w':
+                window_size = atoi(optarg);
                 break;
             case '?':
                 if (optopt == 'v') {
@@ -58,7 +69,7 @@ int main (int argc, char *argv[]) {
     } else if (!strcmp(mode, "network-check")) {
         introspect_network_check(vm_name);
     } else if (!strcmp(mode, "syscall-trace")) {
-        introspect_syscall_trace(vm_name);
+        introspect_syscall_trace(vm_name, learning_mode, window_size);
     } else if (!strcmp(mode, "socketapi-trace")) {
         introspect_socketapi_trace(vm_name);
     } else if (!strcmp(mode, "trap-exec")) {

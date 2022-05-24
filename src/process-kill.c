@@ -58,7 +58,7 @@ event_response_t kill_step_cb(vmi_instance_t vmi, vmi_event_t *event) {
         vmi_set_vcpureg(vmi, sys_kill_addr, RIP, event->vcpu_id);
 
         vmi_read_32_va(vmi, rip_orig, 0, &leave_kill_orig_data);
-        set_breakpoint(vmi, rip_orig, 0);
+     //   set_breakpoint(vmi, rip_orig, 0);
 
     } else if (kill_flag == 1) {
         interrupted = -1;
@@ -162,10 +162,10 @@ int introspect_process_kill (char *name, char *arg) {
         return -1;
     }
 
-    if (set_breakpoint(vmi, virt_schedule, 0) < 0) {
+ /*   if (set_breakpoint(vmi, virt_schedule, 0) < 0) {
         printf("Could not set break points\n");
         goto exit;
-    }
+    }*/
 
     while(!interrupted){
         if (vmi_events_listen(vmi, 1000) != VMI_SUCCESS) {

@@ -14,8 +14,7 @@ PROCESS_KILL = process-kill
 TRAP_EXEC = trap-exec
 
 OBJECTS = $(MAIN).o $(PROCESS_LIST).o $(MODULE_LIST).o $(PROCESS_KILL).o \
-          $(NETWORK_CHECK).o $(SYSCALL_TRACE).o $(SOCKETAPI_TRACE).o $(TRAP_EXEC).o \
-        
+          $(NETWORK_CHECK).o $(SOCKETAPI_TRACE).o $(TRAP_EXEC).o $(SYSCALL_TRACE).o \
 
 $(MAIN): $(OBJECTS)
 	$(CC) -o $(MAIN) $(OBJECTS) $(LIBS) $(OPENSSL_LIBS)

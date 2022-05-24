@@ -55,6 +55,9 @@ modules.order
 Module.symvers
 Mkfile.old
 dkms.conf
+.vscode/
+__pycache__/
+
 
 ### Linux ###
 *~

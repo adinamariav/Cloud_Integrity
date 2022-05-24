@@ -61,7 +61,7 @@ event_response_t socket_step_cb(vmi_instance_t vmi, vmi_event_t *event) {
     else if (socket_event_type == 3)
         vmi_register_event(vmi, &accept_leave_event);
 #else
-    accept_enter_event.interrupt_event.reinject = 1;
+ /*   accept_enter_event.interrupt_event.reinject = 1;
     if (socket_event_type == 2) {
         if (set_breakpoint(vmi, virt_sys_connect, 0) < 0) {
             printf("Could not set break points\n");
@@ -74,7 +74,7 @@ event_response_t socket_step_cb(vmi_instance_t vmi, vmi_event_t *event) {
             vmi_destroy(vmi);
             exit(1);
         }
-    } 
+    } */
 #endif
 
     /** 
@@ -151,11 +151,11 @@ event_response_t socket_enter_cb(vmi_instance_t vmi, vmi_event_t *event){
         /**
          * insert breakpoint into the syscall leave function
          */
-        if (set_breakpoint(vmi, virt_leave_sys_accept, 0) < 0) {
+   /*     if (set_breakpoint(vmi, virt_leave_sys_accept, 0) < 0) {
             printf("Could not set break points\n");
             vmi_destroy(vmi);
             exit(1);
-        }
+        }*/
 #endif       
     }
 
@@ -384,14 +384,14 @@ int introspect_socketapi_trace (char *name) {
     /**
      * insert breakpoint into the syscall entry function
      */
-    if (set_breakpoint(vmi, virt_sys_accept, 0) < 0) {
+ /*   if (set_breakpoint(vmi, virt_sys_accept, 0) < 0) {
         printf("Could not set break points\n");
         goto exit;
     }
     if (set_breakpoint(vmi, virt_sys_connect, 0) < 0) {
         printf("Could not set break points\n");
         goto exit;
-    }
+    }*/
 #endif
 
     while(!interrupted){
