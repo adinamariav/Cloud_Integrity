@@ -1,19 +1,8 @@
-#define MAX_BUFSIZE 2048
-#define SEPARATOR ","
-
 #include "vmi.h"
+#include "client.h"
 
-#include <stdlib.h>
-#include <string.h>
 #include <fcntl.h>
-#include <string.h>
-#include <stdio.h>
 #include <signal.h>
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-#include <netdb.h>
 
 #include <libvmi/libvmi.h>
 #include <libvmi/events.h>
@@ -23,6 +12,7 @@ reg_t lstar;
 vmi_event_t cr3_event;
 vmi_event_t msr_syscall_event;
 bool mem_events_registered;
+int cs;
 
 #ifndef MEM_EVENT
 struct bp_cb_data {
@@ -36,214 +26,15 @@ char BREAKPOINT = 0xcc;
 
 int num_sys = 0;
 char **sys_index = NULL;
-pid_t last_pid;
 char buffer[MAX_BUFSIZE];
 int syscall_index;
 int window_size = 10;
 
-struct sockaddr_in sockcl;
-struct sockaddr_in to;
-char ip_server[] = "127.0.0.1";
-int cs;
-
-#pragma region syscall_handlers
-void print_open_flags(int flags) {
-    if (!flags)
-        printf("%s", "O_RDONLY ");
-    if (flags & O_WRONLY)
-        printf("%s", "O_WRONLY ");
-    if (flags & O_RDWR)
-        printf("%s", "O_RDWR ");
-    if (flags & O_CREAT)
-        printf("%s", "O_CREAT ");
-    if (flags & O_EXCL)
-        printf("%s", "O_EXCL ");
-    if (flags & O_NOCTTY)
-        printf("%s", "O_NOCTTY ");
-    if (flags & O_TRUNC)
-        printf("%s", "O_TRUNC ");
-    if (flags & O_APPEND)
-        printf("%s", "O_APPEND ");
-    if (flags & O_NONBLOCK)
-        printf("%s", "O_NONBLOCK ");
-    if (flags & O_DSYNC)
-        printf("%s", "O_DSYNC ");
-    if (flags & __O_DIRECT)
-        printf("%s", "__O_DIRECT ");
-    if (flags & O_DIRECTORY)
-        printf("%s", "O_DIRECTORY ");
-    if (flags & O_CLOEXEC)
-        printf("%s", "O_CLOEXEC ");
-}
-
-void print_mprotect_flags(int flags) {
-    if (!flags)
-        printf("%s", "PROT_NONE ");
-    if (flags & PROT_READ)
-        printf("%s", "PROT_READ ");
-    if (flags & PROT_WRITE)
-        printf("%s", "PROT_WRITE ");
-    if (flags & PROT_EXEC)
-        printf("%s", "PROT_EXEC ");
-}
-
-void print_open(vmi_instance_t vmi, int pid, reg_t *regs, FILE* fp) {
-    char *filename = NULL;
-    filename = vmi_read_str_va(vmi, regs[0], pid);
-
-    printf("filename: %s, mode: %u, flags: ", filename, (unsigned int)regs[1]);
-    print_open_flags((unsigned int)regs[2]);
-
-    free(filename);
-}
-
-void print_openat(vmi_instance_t vmi, int pid, reg_t *regs, FILE* fp) {
-    char *filename = NULL;
-    filename = vmi_read_str_va(vmi, regs[1], pid);
-
-    printf("DFD: %u, filename: %s, mode: %u, flags: ", (unsigned int)regs[0], filename, (unsigned int)regs[2]);
-
-    print_open_flags((unsigned int)regs[3]);
-    free(filename);
-}
-
-void print_write(vmi_instance_t vmi, int pid, reg_t *regs, FILE* fp) {
-    char *buffer = NULL;
-    buffer = vmi_read_str_va(vmi, regs[1], pid);
-
-    printf("fd: %u, buf: %s, count: %u", (unsigned int)regs[0], buffer, (unsigned int)regs[2]);
-    free(buffer);
-}
-
-void print_execve(vmi_instance_t vmi, int pid, reg_t *regs, FILE* fp) {
-    char *filename = NULL;
-
-    char buffer[1000];
-
-    vmi_pause_vm(vmi);
-
-    filename = vmi_read_str_va(vmi, regs[0], pid);
-    char *argv = NULL;
-    argv = vmi_read_str_va(vmi, regs[1], pid);
-    char *envp = NULL;
-    envp = vmi_read_str_va(vmi, regs[2], pid);
-
-    printf(" last-pid: %d ", pid);
-    printf("filename: %s", filename);
-
-    vmi_resume_vm(vmi);
-    free(filename);
-    free(argv);
-    free(envp);
-}
-
-void print_mprotect(vmi_instance_t vmi, int pid, reg_t *regs, FILE* fp) {
-    printf("start addr: 0x%lx, len: %u, prot: ", (unsigned long)regs[0], (unsigned int)regs[1]);
-    print_mprotect_flags((unsigned int)regs[2]);
-}
-
-void print_args(vmi_instance_t vmi, vmi_event_t *event, int pid, int syscall_id, FILE* fp) {
-    int args_number = 6;
-    
-    if (args_number <= 0)
-        return;
-    
-    reg_t regs[6];
-
-    vmi_get_vcpureg(vmi, &regs[0], RDI, event->vcpu_id);
-    vmi_get_vcpureg(vmi, &regs[1], RSI, event->vcpu_id);
-    vmi_get_vcpureg(vmi, &regs[2], RDX, event->vcpu_id);
-    vmi_get_vcpureg(vmi, &regs[3], R10, event->vcpu_id);
-    vmi_get_vcpureg(vmi, &regs[4], R8, event->vcpu_id);
-    vmi_get_vcpureg(vmi, &regs[5], R9, event->vcpu_id);
-
-    switch (syscall_id) {
-        case 1:
-            print_write(vmi, pid, regs, fp);
-            break;
-        case 2:
-            print_open(vmi, pid, regs, fp);
-            break;
-        case 10:
-            print_mprotect(vmi, pid, regs, fp);
-            break;
-        case 59:
-            print_execve(vmi, last_pid, regs, fp);
-            break;
-        case 57:
-            last_pid = pid;
-            break;
-        case 257:
-            print_openat(vmi, pid, regs, fp);
-            break;
-        
-        default:
-            for (int i = 0; i < args_number; i++) {
-                printf("%u ", (unsigned int)regs[i]);
-            }
-            
-            break;
-    }
-
-    fprintf(fp, "%u, %u, %u, %u, %u, %u\n", (unsigned int)regs[0], (unsigned int)regs[1], (unsigned int)regs[2], (unsigned int)regs[3], (unsigned int)regs[4], (unsigned int)regs[5]);
-}
-#pragma endregion
-
-void connect_server() {
-    struct addrinfo hints;
-    struct addrinfo *res, *tmp;
-    char host[256];
-    char hostname[1024];
-
-    memset(&hints, 0, sizeof(struct addrinfo));
-    hints.ai_family = AF_INET;
-    gethostname(hostname, 1024);
-
-    int ret = getaddrinfo(hostname, NULL, &hints, &res);
-    if (ret != 0) {
-        exit(EXIT_FAILURE);
-    }
-
-    for (tmp = res; tmp != NULL; tmp = tmp->ai_next) {
-        getnameinfo(tmp->ai_addr, tmp->ai_addrlen, host, sizeof(host), NULL, 0, NI_NUMERICHOST);
-    }
-
-    if ((cs = socket(AF_INET, SOCK_STREAM, 0)) < 0)
-	{
-		perror("client: socket");
-		_exit(1);
-	}
-
-    sockcl.sin_family=AF_INET;
-	sockcl.sin_addr.s_addr=inet_addr(host);
-
-	to.sin_family=AF_INET;
-	to.sin_port = htons(1233);
-	to.sin_addr.s_addr = inet_addr(ip_server);
-
-	if (bind(cs, (struct sockaddr *)&sockcl, sizeof(sockcl)) < 0)
-	{
-		perror("client: bind");
-		_exit(1);
-	}
-
-	if (connect(cs,(struct sockaddr *)&to, sizeof(to)) < 0)
-	{
-		perror("client: connect");
-		_exit(1);
-	}
-
-    freeaddrinfo(res);
-}
-
 void append_syscall(int syscall_id) {
-    printf("%d\n", syscall_id);
     if (syscall_index == window_size) {
         syscall_index = 0;
-        printf("%s\n", buffer);
-        strcat(buffer, ".");
-        printf("%ld\n", strlen(buffer));
-        write(cs,buffer,strlen(buffer));
+        strcat(buffer, END);
+        write(cs, buffer, strlen(buffer));
         strcpy(buffer, "");
     }
     else {
@@ -251,6 +42,24 @@ void append_syscall(int syscall_id) {
         strcat(buffer, SEPARATOR);
         syscall_index++;
     }
+}
+
+void read_syscall_table() {
+    char _line[256];
+    char _name[256];
+    int _index[256];
+
+    FILE *_file = fopen("data/syscall_index.linux", "r");
+    if (_file == NULL)
+        printf("Failed to read syscall file\n");
+
+    while(fgets(_line, sizeof(_line), _file) != NULL){
+        sscanf(_line, "%d\t%s", _index, _name);
+        sys_index = realloc(sys_index, sizeof(char*) * ++num_sys);
+        sys_index[num_sys-1] = (char*) malloc(256);
+        strcpy(sys_index[num_sys-1], _name);
+    }
+    fclose(_file);
 }
 
 event_response_t syscall_cb(vmi_instance_t vmi, vmi_event_t *event) {
@@ -292,30 +101,6 @@ event_response_t syscall_cb(vmi_instance_t vmi, vmi_event_t *event) {
     vmi_step_event(vmi, event, event->vcpu_id, 1, NULL);
 
     return 0;
-}
-
-void read_syscall_table() {
-    char _line[256];
-    char _name[256];
-    int _index[256];
-
-    FILE *_file = fopen("data/syscall_index.linux", "r");
-    if (_file == NULL)
-        printf("Failed to read syscall file\n");
-
-    while(fgets(_line, sizeof(_line), _file) != NULL){
-        sscanf(_line, "%d\t%s", _index, _name);
-        sys_index = realloc(sys_index, sizeof(char*) * ++num_sys);
-        sys_index[num_sys-1] = (char*) malloc(256);
-        strcpy(sys_index[num_sys-1], _name);
-    }
-    fclose(_file);
-}
-
-void create_csv_file() {
-    FILE *fp = fopen("syscall-trace.csv", "w");
-    fprintf(fp, "PID, SyscallID, Syscall, RDI, RSI, RDX, R10, R8, R9\n");
-    fclose(fp);
 }
 
 #ifdef MEM_EVENT
@@ -525,8 +310,11 @@ int introspect_syscall_trace (char *name, bool learning_mode, int window_size) {
     act.sa_handler = close_handler;
     act.sa_flags = 0;
 
+    struct sockaddr_in sockcl;
+    struct sockaddr_in to;
+
     read_syscall_table();
-    connect_server();
+    connect_server(&cs, &sockcl, &to);
 
     sigemptyset(&act.sa_mask);
     sigaction(SIGHUP,  &act, NULL);

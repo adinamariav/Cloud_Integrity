@@ -30,8 +30,6 @@ static void close_handler(int sig){
     interrupted = sig;
 }
 
-
-
 int introspect_process_list(char *name);
 
 int introspect_module_list(char *name);

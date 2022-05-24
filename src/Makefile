@@ -5,6 +5,7 @@ OPENSSL_LIBS = -lcrypto
 RM = rm -rf
 
 MAIN = vmi
+CLIENT = client
 PROCESS_LIST = process-list
 MODULE_LIST = module-list
 NETWORK_CHECK = network-check
@@ -19,7 +20,7 @@ OBJECTS = $(MAIN).o $(PROCESS_LIST).o $(MODULE_LIST).o $(PROCESS_KILL).o \
 $(MAIN): $(OBJECTS)
 	$(CC) -o $(MAIN) $(OBJECTS) $(LIBS) $(OPENSSL_LIBS)
 
-$(OBJECTS): $(MAIN).h
+$(OBJECTS): $(MAIN).h $(CLIENT).h
 
 .PHONE: clean
 clean:
