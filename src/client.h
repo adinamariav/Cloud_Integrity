@@ -2,6 +2,14 @@
 #define SEPARATOR ","
 #define END "."
 
+#define RDI_ regs[0]
+#define RSI_ regs[1]
+#define RDX_ regs[2]
+#define R10_ regs[3]
+#define R8_  regs[4]
+#define R9_  regs[5]
+
+
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -11,6 +19,8 @@
 #include <unistd.h>
 #include <stdio.h>
 #include <string.h>
+
+
 
 
 void connect_server(int* cs, struct sockaddr_in* sockcl, struct sockaddr_in* to) {
@@ -110,35 +120,35 @@ void print_mprotect_flags(int flags) {
 
 void print_open(vmi_instance_t vmi, int pid, reg_t *regs, FILE* fp) {
     char *filename = NULL;
-    filename = vmi_read_str_va(vmi, regs[0], pid);
+    filename = vmi_read_str_va(vmi, RDI_, pid);
 
-    printf("filename: %s, mode: %u, flags: ", filename, (unsigned int)regs[1]);
-    print_open_flags((unsigned int)regs[2]);
+    printf("filename: %s, mode: %u, flags: ", filename, (unsigned int)RSI_);
+    print_open_flags((unsigned int)RDX_);
 
     free(filename);
 }
 
 void print_openat(vmi_instance_t vmi, int pid, reg_t *regs, FILE* fp) {
     char *filename = NULL;
-    filename = vmi_read_str_va(vmi, regs[1], pid);
+    filename = vmi_read_str_va(vmi, RSI_, pid);
 
-    printf("DFD: %u, filename: %s, mode: %u, flags: ", (unsigned int)regs[0], filename, (unsigned int)regs[2]);
+    printf("DFD: %u, filename: %s, mode: %u, flags: ", (unsigned int)RDI_, filename, (unsigned int)RDX_);
 
-    print_open_flags((unsigned int)regs[3]);
+    print_open_flags((unsigned int)R10_);
     free(filename);
 }
 
 void print_write(vmi_instance_t vmi, int pid, reg_t *regs, FILE* fp) {
     char *buffer = NULL;
-    buffer = vmi_read_str_va(vmi, regs[1], pid);
+    buffer = vmi_read_str_va(vmi, RSI_, pid);
 
-    printf("fd: %u, buf: %s, count: %u", (unsigned int)regs[0], buffer, (unsigned int)regs[2]);
+    printf("fd: %u, buf: %s, count: %u", (unsigned int)RDI_, buffer, (unsigned int)RDX_);
     free(buffer);
 }
 
 void print_mprotect(vmi_instance_t vmi, int pid, reg_t *regs, FILE* fp) {
-    printf("start addr: 0x%lx, len: %u, prot: ", (unsigned long)regs[0], (unsigned int)regs[1]);
-    print_mprotect_flags((unsigned int)regs[2]);
+    printf("start addr: 0x%lx, len: %u, prot: ", (unsigned long)RDI_, (unsigned int)RSI_);
+    print_mprotect_flags((unsigned int)RDX_);
 }
 
 void print_args(vmi_instance_t vmi, vmi_event_t *event, int pid, int syscall_id, FILE* fp) {
@@ -149,12 +159,12 @@ void print_args(vmi_instance_t vmi, vmi_event_t *event, int pid, int syscall_id,
     
     reg_t regs[6];
 
-    vmi_get_vcpureg(vmi, &regs[0], RDI, event->vcpu_id);
-    vmi_get_vcpureg(vmi, &regs[1], RSI, event->vcpu_id);
-    vmi_get_vcpureg(vmi, &regs[2], RDX, event->vcpu_id);
-    vmi_get_vcpureg(vmi, &regs[3], R10, event->vcpu_id);
-    vmi_get_vcpureg(vmi, &regs[4], R8, event->vcpu_id);
-    vmi_get_vcpureg(vmi, &regs[5], R9, event->vcpu_id);
+    vmi_get_vcpureg(vmi, &RDI_, RDI, event->vcpu_id);
+    vmi_get_vcpureg(vmi, &RSI_, RSI, event->vcpu_id);
+    vmi_get_vcpureg(vmi, &RDX_, RDX, event->vcpu_id);
+    vmi_get_vcpureg(vmi, &R10_, R10, event->vcpu_id);
+    vmi_get_vcpureg(vmi, &R8_, R8, event->vcpu_id);
+    vmi_get_vcpureg(vmi, &R9_, R9, event->vcpu_id);
 
     switch (syscall_id) {
         case 1:
@@ -178,6 +188,6 @@ void print_args(vmi_instance_t vmi, vmi_event_t *event, int pid, int syscall_id,
             break;
     }
 
-    fprintf(fp, "%u, %u, %u, %u, %u, %u\n", (unsigned int)regs[0], (unsigned int)regs[1], (unsigned int)regs[2], (unsigned int)regs[3], (unsigned int)regs[4], (unsigned int)regs[5]);
+    fprintf(fp, "%u, %u, %u, %u, %u, %u\n", (unsigned int)RDI_, (unsigned int)RSI_, (unsigned int)RDX_, (unsigned int)R10_, (unsigned int)R8_, (unsigned int)R9_);
 }
 #pragma endregion
