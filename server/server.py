@@ -1,13 +1,18 @@
 from BoSC import BoSC_Creator
+from _thread import *
 from analyse_trace import create_lookup_table
 
+import subprocess
 import socket
 import sys
-from _thread import *
 
 bosc = BoSC_Creator(10)
 anomalyCount = 0
     
+def learn(name, time):
+    #subprocess.run(['./vmi', '-v', name, '-t', time, '-a', '-m', 'syscall-trace'])
+    create_lookup_table()
+    bosc.create_learning_db()
 
 def threaded_client(connection):
     global anomalyCount
@@ -36,6 +41,7 @@ def threaded_client(connection):
 
 if len(sys.argv) > 1:
     if sys.argv[1] == "--learn":
+        #subprocess.run(['./vmi', '-v', sys.argv[2], '-t', sys.argv[3], '-m', 'syscall-trace'])
         create_lookup_table()
         bosc.create_learning_db()
   
@@ -57,6 +63,7 @@ if len(sys.argv) > 1:
             ThreadCount += 1
             print('Thread Number: ' + str(ThreadCount))
         ServerSocket.close()
-            
+    else:
+        print("Syntax: server.py --learn [name] [time/s]")   
 else:
     print("Not enough arguments")

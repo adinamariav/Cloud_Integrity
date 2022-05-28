@@ -1,18 +1,18 @@
 import React from 'react'
-
+import { DataContext } from './Context'
 
 export const CustomDropdown = (props) => (
   <div className="form-group">
-    <strong>{props.username}</strong>
+    <strong>{props.name}</strong>
     <select
       className="form-control"
-      name="{props.username}"
+      name="{props.name}"
       onChange={props.onChange}
     >
       <option defaultValue>Select VM{props.name}</option>
       {props.options.map((item, index) => (
         <option key={index} value={item.id}>
-          {item.username}
+          {item.name}
         </option>
       ))}
     </select>
@@ -20,6 +20,8 @@ export const CustomDropdown = (props) => (
 )
 
 export default class CustomListDropDown extends React.Component {
+  static contextType = DataContext;
+
   constructor() {
     super()
     this.state = {
@@ -27,14 +29,19 @@ export default class CustomListDropDown extends React.Component {
       value: '',
     }
   }
+
   componentDidMount() {
-    fetch('https://jsonplaceholder.typicode.com/users')
-      .then((response) => response.json())
-      .then((res) => this.setState({ collection: res }))
+    fetch('/list/vm')
+    .then((response) => response.json())
+    .then((res) => this.setState({ collection: res }))
   }
+
   onChange = (event) => {
     this.setState({ value: event.target.value })
+    const {collection} = this.state;
+    this.context.selectVM(collection[event.target.value].name)
   }
+
   render() {
     return (
       <div className="container mt-4">

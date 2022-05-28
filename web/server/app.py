@@ -1,14 +1,35 @@
-from flask import Flask, send_from_directory
-from flask_restful import Api, Resource, reqparse
-from flask_cors import CORS #comment this on deployment
-from apiHandler import HelloApiHandler
+from flask import Flask, request
+from flask_restful import Api
+from flask_cors import CORS
+import json
+from xenutils import get_active_VMs
+from server.server import learn
 
-app = Flask(__name__, static_url_path='', static_folder='frontend/build')
-CORS(app) #comment this on deployment
+app = Flask(__name__, static_url_path='')
+CORS(app) 
 api = Api(app)
 
-@app.route("/", defaults={'path':''})
-def serve(path):
-    return send_from_directory(app.static_folder,'index.html')
+@app.route("/list/vm")
+def serve():
+    vms = get_active_VMs()
+    ids = []
 
-api.add_resource(HelloApiHandler, '/flask/hello')
+    for i in range(len(vms)):
+        ids.append(i)
+
+    return_vms = [{"name" : n, "id" : i} for n, i in zip(vms, ids)]
+
+    return str(json.dumps(return_vms))
+
+@app.route("/analyze")
+def analyze():
+    name = request.form['name']
+    time = request.form['time']
+    learn(name, time)
+
+@app.route("/")
+def serve2():
+    return "Tralala"
+                
+if __name__ == '__main__':
+    app.run()

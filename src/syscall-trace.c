@@ -3,6 +3,7 @@
 
 #include <fcntl.h>
 #include <signal.h>
+#include <time.h>
 
 #include <libvmi/libvmi.h>
 #include <libvmi/events.h>
@@ -12,6 +13,7 @@ reg_t lstar;
 vmi_event_t cr3_event;
 vmi_event_t msr_syscall_event;
 bool mem_events_registered;
+bool learning;
 int cs;
 
 #ifndef MEM_EVENT
@@ -89,7 +91,9 @@ event_response_t syscall_cb(vmi_instance_t vmi, vmi_event_t *event) {
     else {
         printf("PID[%d]: %s with args ", pid, sys_index[_index]);
         fprintf(fp, "%d, %d, %s, ", pid, _index, sys_index[_index]);
-        append_syscall(_index);
+        
+        if (!learning)
+            append_syscall(_index);
     }
 
     print_args(vmi, event, pid, _index, fp);
@@ -105,7 +109,7 @@ event_response_t syscall_cb(vmi_instance_t vmi, vmi_event_t *event) {
 
 #ifdef MEM_EVENT
 bool register_lstar_mem_event(vmi_instance_t vmi, vmi_event_t *event) {
-    printf("register_lstar_mem_event\n");
+
     addr_t cr3 = event->reg_event.value;
     addr_t phys_lstar = 0;
     addr_t phys_sysenter_ip = 0;
@@ -301,11 +305,12 @@ event_response_t set_lstar_breakpoint(vmi_instance_t vmi) {
 }
 #endif
 
-int introspect_syscall_trace (char *name, bool learning_mode, int window_size) {
+int introspect_syscall_trace (char *name, bool learning_mode, int window_size, int set_time) {
     vmi_instance_t vmi = NULL;
     status_t status = VMI_SUCCESS;
     struct sigaction act;
     vmi_init_data_t *init_data = NULL;
+    learning = learning_mode;
 
     act.sa_handler = close_handler;
     act.sa_flags = 0;
@@ -314,7 +319,9 @@ int introspect_syscall_trace (char *name, bool learning_mode, int window_size) {
     struct sockaddr_in to;
 
     read_syscall_table();
-    connect_server(&cs, &sockcl, &to);
+
+    if (!learning)
+        connect_server(&cs, &sockcl, &to);
 
     sigemptyset(&act.sa_mask);
     sigaction(SIGHUP,  &act, NULL);
@@ -349,6 +356,10 @@ int introspect_syscall_trace (char *name, bool learning_mode, int window_size) {
 
     create_csv_file();
 
+    time_t start_time;
+    float f_set_time = set_time * 60;
+    time(&start_time);
+
 #ifndef MEM_EVENT
     if ( VMI_SUCCESS == set_lstar_breakpoint(vmi) ) {
 #else
@@ -356,9 +367,15 @@ int introspect_syscall_trace (char *name, bool learning_mode, int window_size) {
 #endif
         while (!interrupted) {
             status = vmi_events_listen(vmi,500);
+
             if (status != VMI_SUCCESS) {
                 printf("Error waiting for events, quitting...\n");
                 interrupted = -1;
+            }
+
+            if (set_time > 0) {
+                if (difftime(time(NULL), start_time) > f_set_time)
+                    interrupted = -1;
             }
         }
     }
@@ -379,7 +396,8 @@ int introspect_syscall_trace (char *name, bool learning_mode, int window_size) {
         free(init_data);
     }
 
-    close(cs);
+    if (!learning)
+        close(cs);
 
     return 0;
 }

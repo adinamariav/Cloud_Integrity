@@ -10,6 +10,7 @@ class BoSC_Creator(object):
         self.db_connector = None
         self.syscall_LUT   = {}
         self.sliding_window= []
+        self.anomalies = 0
 
         self.DB_CONNECTION = DB_Connector()
 
@@ -44,6 +45,7 @@ class BoSC_Creator(object):
             self.sliding_window = self.sliding_window[1:]
             self.sliding_window.append(syscall)
             if not self.DB_CONNECTION.check_existence(bag):
+                print("Anomalies: ", self.anomalies)
                 return 'Anomaly'
             return 'Normal'
         elif len(self.sliding_window) < self.WINDOW_SIZE:
@@ -53,7 +55,7 @@ class BoSC_Creator(object):
     def create_learning_db(self):
         df = pd.read_csv('../syscall-trace.csv')
         self.DB_CONNECTION.validate_bosc_table()
-        classifier.load_lookup_table()
+        self.load_lookup_table()
         df.columns = df.columns.map(lambda x: x.strip())
 
         for index, row in df.iterrows():

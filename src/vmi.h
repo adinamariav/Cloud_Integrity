@@ -36,7 +36,7 @@ int introspect_module_list(char *name);
 
 int introspect_network_check(char *name);
 
-int introspect_syscall_trace(char *name, bool learning_mode, int window_size);
+int introspect_syscall_trace(char *name, bool learning_mode, int window_size, int time);
 
 int introspect_socketapi_trace(char *name);
 

@@ -7,13 +7,14 @@ int main (int argc, char *argv[]) {
     char *arg = NULL;
     bool learning_mode = true;
     int window_size = 10;
+    int time = -1;
 
     /**
      * Parsing Parameters
      * -v: vm name listed by xl list
      * -m: mode option
      */
-    while ((opt = getopt(argc, argv, "v:m:r:h")) != -1) {
+    while ((opt = getopt(argc, argv, "v:m:r:h:t:l:a:w")) != -1) {
         switch(opt) {
             case 'h':
                 printf("Usage: ./vmi -v [vm_name] -m [mode]\n");
@@ -21,7 +22,7 @@ int main (int argc, char *argv[]) {
                 printf("process-list:		List the processes\n");
                 printf("module-list:		List the modules\n");
                 printf("network-check:		Check if any network connection is hidden\n");
-                printf("syscall-trace:		Trace the system calls made by any processes. Must be followed by -l [learning] (default) or -a [analyzing], and by -w [window size]\n");
+                printf("syscall-trace:		Trace the system calls made by any processes. Must be followed by -l [learning] (default) or -a [analyzing], by -w [window size] and -t [time]\n");
                 printf("socketapi-trace:	Trace the socket API made by any processes\n");
                 printf("process-kill:		Kill a process at runtime given its pid\n");
                 return 0;
@@ -42,6 +43,9 @@ int main (int argc, char *argv[]) {
                 break;
             case 'w':
                 window_size = atoi(optarg);
+                break;
+            case 't':
+                time = atoi(optarg);
                 break;
             case '?':
                 if (optopt == 'v') {
@@ -69,7 +73,7 @@ int main (int argc, char *argv[]) {
     } else if (!strcmp(mode, "network-check")) {
         introspect_network_check(vm_name);
     } else if (!strcmp(mode, "syscall-trace")) {
-        introspect_syscall_trace(vm_name, learning_mode, window_size);
+        introspect_syscall_trace(vm_name, learning_mode, window_size, time);
     } else if (!strcmp(mode, "socketapi-trace")) {
         introspect_socketapi_trace(vm_name);
     } else if (!strcmp(mode, "trap-exec")) {
