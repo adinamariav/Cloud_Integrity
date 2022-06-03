@@ -5,26 +5,23 @@ int main (int argc, char *argv[]) {
     char *vm_name = NULL;
     char *mode = NULL;
     char *arg = NULL;
-    bool learning_mode = true;
     int window_size = 10;
     int time = -1;
+    bool print = false;
 
     /**
      * Parsing Parameters
      * -v: vm name listed by xl list
      * -m: mode option
      */
-    while ((opt = getopt(argc, argv, "v:m:r:h:t:l:a:w")) != -1) {
+    while ((opt = getopt(argc, argv, "hv:m:sw:t:")) != -1) {
         switch(opt) {
             case 'h':
                 printf("Usage: ./vmi -v [vm_name] -m [mode]\n");
                 printf("Supported Mode: \n");
-                printf("process-list:		List the processes\n");
-                printf("module-list:		List the modules\n");
-                printf("network-check:		Check if any network connection is hidden\n");
-                printf("syscall-trace:		Trace the system calls made by any processes. Must be followed by -l [learning] (default) or -a [analyzing], by -w [window size] and -t [time]\n");
-                printf("socketapi-trace:	Trace the socket API made by any processes\n");
-                printf("process-kill:		Kill a process at runtime given its pid\n");
+                printf("learn:		        Create learning database. Can be followed by -s to show output, by -w [window size] and -t [time]\n");
+                printf("analyze:		    Analyze syscalls inside given vm\n");
+                printf("sandbox:		    Print relevant events inside the vm. See README\n");
                 return 0;
             case 'v':
                 vm_name = optarg;
@@ -32,14 +29,8 @@ int main (int argc, char *argv[]) {
             case 'm':
                 mode = optarg;
                 break;
-            case 'r':
-                arg = optarg;
-                break;
-            case 'l':
-                learning_mode = true;
-                break;
-            case 'a':
-                learning_mode = false;
+            case 's':
+                print = true;
                 break;
             case 'w':
                 window_size = atoi(optarg);
@@ -66,24 +57,12 @@ int main (int argc, char *argv[]) {
 
     printf("Introspect VM %s with the Mode %s\n", vm_name, mode);
 
-    if (!strcmp(mode, "process-list")) {
-        introspect_process_list(vm_name);
-    } else if (!strcmp(mode, "module-list")) {
-        introspect_module_list(vm_name);
-    } else if (!strcmp(mode, "network-check")) {
-        introspect_network_check(vm_name);
-    } else if (!strcmp(mode, "syscall-trace")) {
-        introspect_syscall_trace(vm_name, learning_mode, window_size, time);
-    } else if (!strcmp(mode, "socketapi-trace")) {
-        introspect_socketapi_trace(vm_name);
-    } else if (!strcmp(mode, "trap-exec")) {
-        introspect_trap_exec(vm_name);
-    } else if (!strcmp(mode, "process-kill")) {
-        if (arg == NULL) {
-            printf("Missing process id to kill\n");
-            return 0;
-        }
-        introspect_process_kill(vm_name, arg);
+    if (!strcmp(mode, "learn")) {
+        introspect_syscall_trace(vm_name, LEARN_MODE, window_size, time);
+    } else if (!strcmp(mode, "analyze")) {
+        introspect_syscall_trace(vm_name, ANALYSIS_MODE, window_size, time);
+    } else if (!strcmp(mode, "sandbox")) {
+        introspect_syscall_trace(vm_name, SANDBOX_MODE, window_size, time);
     } else {
         printf("Mode %s is not supported\n", mode);
     }

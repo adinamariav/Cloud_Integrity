@@ -40,12 +40,12 @@ class BoSC_Creator(object):
         return str(bag)
 
     def append_BoSC(self, syscall):
+        print(len(self.sliding_window))
         if len(self.sliding_window) == self.WINDOW_SIZE:
             bag = self.create_BoSC()
             self.sliding_window = self.sliding_window[1:]
             self.sliding_window.append(syscall)
             if not self.DB_CONNECTION.check_existence(bag):
-                print("Anomalies: ", self.anomalies)
                 return 'Anomaly'
             return 'Normal'
         elif len(self.sliding_window) < self.WINDOW_SIZE:

@@ -17,7 +17,10 @@
  * if MEM_EVENT is defined, then using EPT violation
  */
 
-#define MEM_EVENT
+//#define MEM_EVENT
+#define LEARN_MODE      0
+#define ANALYSIS_MODE   1
+#define SANDBOX_MODE    2
 
 /* task_struct offsets */
 unsigned long tasks_offset;
@@ -30,16 +33,4 @@ static void close_handler(int sig){
     interrupted = sig;
 }
 
-int introspect_process_list(char *name);
-
-int introspect_module_list(char *name);
-
-int introspect_network_check(char *name);
-
-int introspect_syscall_trace(char *name, bool learning_mode, int window_size, int time);
-
-int introspect_socketapi_trace(char *name);
-
-int introspect_trap_exec(char *name);
-
-int introspect_process_kill(char *name, char *arg);
+int introspect_syscall_trace(char *name, int set_mode, int window_size, int time);

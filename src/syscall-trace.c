@@ -5,29 +5,35 @@
 #include <signal.h>
 #include <time.h>
 
-#include <libvmi/libvmi.h>
-#include <libvmi/events.h>
-
-reg_t cr3;
 reg_t lstar;
-vmi_event_t cr3_event;
-vmi_event_t msr_syscall_event;
-bool mem_events_registered;
-bool learning;
+
+int running_mode;
 int cs;
 
 #ifndef MEM_EVENT
+char saved_opcode = 0;
+vmi_event_t int_event;
+vmi_event_t sstep_event = {0};
+
 struct bp_cb_data {
-    addr_t sym_vaddr;
+    reg_t sym_vaddr;
     char saved_opcode;
     uint64_t hit_count;
 };
 
+struct bp_cb_data cb_data;
 char BREAKPOINT = 0xcc;
+#else
+vmi_event_t cr3_event;
+vmi_event_t msr_syscall_event;
+reg_t cr3;
+bool mem_events_registered;
 #endif
 
 int num_sys = 0;
+int num_set = 0;
 char **sys_index = NULL;
+char **set_syscalls = NULL; 
 char buffer[MAX_BUFSIZE];
 int syscall_index;
 int window_size = 10;
@@ -62,44 +68,89 @@ void read_syscall_table() {
         strcpy(sys_index[num_sys-1], _name);
     }
     fclose(_file);
+
+    if (running_mode == SANDBOX_MODE) {
+        char set_line[256];
+
+        FILE *file = fopen("data/syscalls.txt", "r");
+        if (file == NULL)
+            return;
+
+        while(fgets(set_line, sizeof(set_line), file) != NULL){
+            set_line[strlen(set_line) - 1] = '\0';
+            set_syscalls = realloc(set_syscalls, sizeof(char*) * ++num_set);
+            set_syscalls[num_set-1] = (char*) malloc(256);
+            strcpy(set_syscalls[num_set-1], set_line);
+        }
+
+        fclose(file); 
+    }
 }
 
+bool check_set_syscalls(int index) {
+    if (index < num_sys) {
+        for (int i = 0; i < num_set; i++) {
+            if (strcmp(sys_index[index], set_syscalls[i]) == 0) {
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
+void process_syscall(vmi_instance_t vmi, vmi_event_t* event) {
+    reg_t rdi, rax, cr3;
+    vmi_pid_t pid = -1;
+    FILE* fp = NULL;
+
+    if (running_mode == LEARN_MODE)
+        fp = fopen("syscall-trace.csv", "a");
+
+    vmi_get_vcpureg(vmi, &rax, RAX, event->vcpu_id);
+    vmi_get_vcpureg(vmi, &rdi, RDI, event->vcpu_id);
+    vmi_get_vcpureg(vmi, &cr3, CR3, event->vcpu_id);
+
+    vmi_dtb_to_pid(vmi, cr3, &pid);
+
+    uint16_t _index = (uint16_t)rax;
+
+    if ((running_mode == SANDBOX_MODE) && (check_set_syscalls(_index) == false)) 
+        return;
+
+
+    if (_index >= num_sys) {
+        printf("Process[%d]: unknown syscall id: %d\n", pid, _index);
+        if (running_mode == LEARN_MODE)
+            fprintf(fp, "%d, %d, , ", pid, _index);
+    }
+    else {
+        printf("PID[%d]: %s with args ", pid, sys_index[_index]);
+
+        if (running_mode == LEARN_MODE)
+            fprintf(fp, "%d, %d, %s, ", pid, _index, sys_index[_index]);
+        
+        if (running_mode == ANALYSIS_MODE)
+            append_syscall(_index);
+    }
+
+    print_args(vmi, event, pid, _index, fp, running_mode);
+    printf("\n");
+
+    if (running_mode == LEARN_MODE)
+        fclose(fp);
+    
+}
+
+#ifdef MEM_EVENT
 event_response_t syscall_cb(vmi_instance_t vmi, vmi_event_t *event) {
     if ( event->mem_event.offset != (VMI_BIT_MASK(0,11) & lstar) ) {
         vmi_clear_event(vmi, event, NULL);
         vmi_step_event(vmi, event, event->vcpu_id, 1, NULL);
         return 0;
     }
-
-    reg_t rdi, rax, cr3;
-    vmi_pid_t pid = -1;
-    FILE* fp = fopen("syscall-trace.csv", "a");
-
-    vmi_get_vcpureg(vmi, &rax, RAX, event->vcpu_id);
-    vmi_get_vcpureg(vmi, &rdi, RDI, event->vcpu_id);
-    vmi_get_vcpureg(vmi, &cr3, CR3, event->vcpu_id);
-
     
-    vmi_dtb_to_pid(vmi, cr3, &pid);
-
-    uint16_t _index = (uint16_t)rax;
-
-    if (_index >= num_sys) {
-        printf("Process[%d]: unknown syscall id: %d\n", pid, _index);
-        fprintf(fp, "%d, %d, , ", pid, _index);
-    }
-    else {
-        printf("PID[%d]: %s with args ", pid, sys_index[_index]);
-        fprintf(fp, "%d, %d, %s, ", pid, _index, sys_index[_index]);
-        
-        if (!learning)
-            append_syscall(_index);
-    }
-
-    print_args(vmi, event, pid, _index, fp);
-
-    fclose(fp);
-    printf("\n");
+    process_syscall(vmi, event);
 
     vmi_clear_event(vmi, event, NULL);
     vmi_step_event(vmi, event, event->vcpu_id, 1, NULL);
@@ -107,7 +158,7 @@ event_response_t syscall_cb(vmi_instance_t vmi, vmi_event_t *event) {
     return 0;
 }
 
-#ifdef MEM_EVENT
+
 bool register_lstar_mem_event(vmi_instance_t vmi, vmi_event_t *event) {
 
     addr_t cr3 = event->reg_event.value;
@@ -117,7 +168,6 @@ bool register_lstar_mem_event(vmi_instance_t vmi, vmi_event_t *event) {
     addr_t phys_vsyscall = 0;
 
     lstar = event->x86_regs->msr_lstar;
-
     vmi_pagetable_lookup(vmi, event->x86_regs->cr3, lstar, &phys_lstar);
     printf("Physical LSTAR == %llx\n", (unsigned long long)phys_lstar);
 
@@ -136,7 +186,6 @@ bool register_lstar_mem_event(vmi_instance_t vmi, vmi_event_t *event) {
 }
 
 event_response_t cr3_register_task_callback(vmi_instance_t vmi, vmi_event_t *event) {
-    printf("%s\n", "cr3");
     if ( !mem_events_registered )
         mem_events_registered = register_lstar_mem_event(vmi, event);
     vmi_clear_event(vmi, &cr3_event, NULL);
@@ -153,19 +202,20 @@ event_response_t register_mem_events(vmi_instance_t vmi) {
 
     return vmi_register_event(vmi, &cr3_event);
 }
-
 #else
+
 event_response_t breakpoint_cb(vmi_instance_t vmi, vmi_event_t *event)
-{
+{   
     (void)vmi;
+
     if (!event->data) {
         fprintf(stderr, "Empty event data in breakpoint callback !\n");
         interrupted = true;
         return VMI_EVENT_RESPONSE_NONE;
     }
     struct bp_cb_data *cb_data = (struct bp_cb_data*)event->data;
-
     event->interrupt_event.reinject = 1;
+   
     if ( !event->interrupt_event.insn_length )
         event->interrupt_event.insn_length = 1;
 
@@ -174,21 +224,11 @@ event_response_t breakpoint_cb(vmi_instance_t vmi, vmi_event_t *event)
         return VMI_EVENT_RESPONSE_NONE;
     } else {
         event->interrupt_event.reinject = 0;
-        printf("[%"PRIu32"] Breakpoint hit. Count: %"PRIu64"\n", event->vcpu_id, cb_data->hit_count);
+       
+        process_syscall(vmi, event);
+
         cb_data->hit_count++;
 
-
-        reg_t rax;
-        vmi_get_vcpureg(vmi, &rax, RAX, 0);
-        
-
-        addr_t file_struct;
-        vmi_read_addr_va(vmi, rax, 0, &file_struct);
-
-        char* filename;
-        filename = vmi_read_str_va(vmi, file_struct, 0);
-
-        printf("%s\n", filename);
 
         if (VMI_FAILURE == vmi_write_va(vmi, event->x86_regs->rip, 0, sizeof(BREAKPOINT), &cb_data->saved_opcode, NULL)) {
             fprintf(stderr, "Failed to write back original opcode at 0x%" PRIx64 "\n", event->x86_regs->rip);
@@ -210,38 +250,31 @@ event_response_t single_step_cb(vmi_instance_t vmi, vmi_event_t *event)
         return VMI_EVENT_RESPONSE_NONE;
     }
 
-    // get back callback data struct
     struct bp_cb_data *cb_data = (struct bp_cb_data*)event->data;
 
-    printf("Single-step event: VCPU:%u  GFN %"PRIx64" GLA %016"PRIx64"\n",
-           event->vcpu_id,
-           event->ss_event.gfn,
-           event->ss_event.gla);
-
-    // restore breakpoint
     if (VMI_FAILURE == vmi_write_va(vmi, cb_data->sym_vaddr, 0, sizeof(BREAKPOINT), &BREAKPOINT, NULL)) {
         fprintf(stderr, "Failed to write breakpoint at 0x%" PRIx64 "\n",event->x86_regs->rip);
         interrupted = true;
         return VMI_EVENT_RESPONSE_NONE;
     }
 
-    // disable singlestep
     return VMI_EVENT_RESPONSE_TOGGLE_SINGLESTEP;
 }
 
 event_response_t set_lstar_breakpoint(vmi_instance_t vmi) {
-    char saved_opcode = 0;
 
+if (VMI_FAILURE == vmi_get_vcpureg(vmi, &lstar, MSR_LSTAR, 0)) {
+        fprintf(stderr, "Failed to get current RIP\n");
+        return 1;
+    }
+
+    printf("Pause VM\n");
     if (VMI_FAILURE == vmi_pause_vm(vmi)) {
         fprintf(stderr, "Failed to pause VM\n");
         return VMI_FAILURE;
     }
 
-    if (VMI_FAILURE == vmi_get_vcpureg(vmi, &lstar, MSR_LSTAR, 0)) {
-        fprintf(stderr, "Failed to get current RIP\n");
-        return 1;
-    }
-
+    printf("Save opcode\n");
     if (VMI_FAILURE == vmi_read_va(vmi, lstar, 0, sizeof(BREAKPOINT), &saved_opcode, NULL)) {
         fprintf(stderr, "Failed to read opcode\n");
         return VMI_FAILURE;
@@ -253,20 +286,17 @@ event_response_t set_lstar_breakpoint(vmi_instance_t vmi) {
         return VMI_FAILURE;
     }
 
-    // register int3 event
-    vmi_event_t int_event;
+
     memset(&int_event, 0, sizeof(vmi_event_t));
     int_event.version = VMI_EVENTS_VERSION;
     int_event.type = VMI_EVENT_INTERRUPT;
     int_event.interrupt_event.intr = INT3;
     int_event.callback = breakpoint_cb;
 
-    // fill and pass struct bp_cb_data
-    struct bp_cb_data cb_data = {
-        .sym_vaddr = lstar,
-        .saved_opcode = saved_opcode,
-        .hit_count = 0,
-    };
+    cb_data.sym_vaddr = lstar;
+    cb_data.saved_opcode = saved_opcode;
+    cb_data.hit_count = 0;
+
     int_event.data = (void*)&cb_data;
 
     printf("Register interrupt event\n");
@@ -275,19 +305,17 @@ event_response_t set_lstar_breakpoint(vmi_instance_t vmi) {
         return VMI_FAILURE;
     }
 
+    // get number of vcpus
     unsigned int num_vcpus = vmi_get_num_vcpus(vmi);
 
-    vmi_event_t sstep_event = {0};
     sstep_event.version = VMI_EVENTS_VERSION;
     sstep_event.type = VMI_EVENT_SINGLESTEP;
     sstep_event.callback = single_step_cb;
     sstep_event.ss_event.enable = false;
 
-    // allow singlestep on all VCPUs
     for (unsigned int vcpu=0; vcpu < num_vcpus; vcpu++)
         SET_VCPU_SINGLESTEP(sstep_event.ss_event, vcpu);
-    // pass struct bp_cb_data
-    
+
     sstep_event.data = (void*)&cb_data;
 
     printf("Register singlestep event\n");
@@ -296,22 +324,20 @@ event_response_t set_lstar_breakpoint(vmi_instance_t vmi) {
         return VMI_FAILURE;
     }
 
+    printf("Resume VM\n");
     if (VMI_FAILURE == vmi_resume_vm(vmi)) {
         fprintf(stderr, "Failed to resume VM\n");
         return VMI_FAILURE;
     }
-
-    return VMI_SUCCESS;
 }
 #endif
 
-int introspect_syscall_trace (char *name, bool learning_mode, int window_size, int set_time) {
+int introspect_syscall_trace (char *name, int set_mode, int window_size, int set_time) {
     vmi_instance_t vmi = NULL;
     status_t status = VMI_SUCCESS;
     struct sigaction act;
     vmi_init_data_t *init_data = NULL;
-    learning = learning_mode;
-
+    running_mode = set_mode;
     act.sa_handler = close_handler;
     act.sa_flags = 0;
 
@@ -320,7 +346,7 @@ int introspect_syscall_trace (char *name, bool learning_mode, int window_size, i
 
     read_syscall_table();
 
-    if (!learning)
+    if (running_mode == ANALYSIS_MODE)
         connect_server(&cs, &sockcl, &to);
 
     sigemptyset(&act.sa_mask);
@@ -353,8 +379,9 @@ int introspect_syscall_trace (char *name, bool learning_mode, int window_size, i
     }
 
     printf("LibVMI init succeeded!\n");
-
-    create_csv_file();
+    
+    if (running_mode == LEARN_MODE)
+        create_csv_file();
 
     time_t start_time;
     float f_set_time = set_time * 60;
@@ -380,23 +407,33 @@ int introspect_syscall_trace (char *name, bool learning_mode, int window_size, i
         }
     }
 
+error_exit:
+#ifndef MEM_EVENT
     vmi_pause_vm(vmi);
+    if (saved_opcode) {
+        printf("Restore previous opcode at 0x%" PRIx64 "\n", lstar);
+        vmi_write_va(vmi, lstar, 0, sizeof(BREAKPOINT), &saved_opcode, NULL);
+    }
 
+        // cleanup queue
+    if (vmi_are_events_pending(vmi))
+        vmi_events_listen(vmi, 0);
+
+    vmi_clear_event(vmi, &int_event, NULL);
+    vmi_clear_event(vmi, &sstep_event, NULL);
+
+    vmi_resume_vm(vmi);
+#else
     if ( vmi_are_events_pending(vmi) > 0 )
         vmi_events_listen(vmi, 0);
 
     vmi_clear_event(vmi, &cr3_event, NULL);
     vmi_clear_event(vmi, &msr_syscall_event, NULL);
-    vmi_resume_vm(vmi);
+#endif
 
     vmi_destroy(vmi);
 
-    if (init_data) {
-        free(init_data->entry[0].data);
-        free(init_data);
-    }
-
-    if (!learning)
+    if (running_mode == ANALYSIS_MODE)
         close(cs);
 
     return 0;

@@ -3,7 +3,11 @@ from flask_restful import Api
 from flask_cors import CORS
 import json
 from xenutils import get_active_VMs
-from server.server import learn
+
+import sys
+sys.path.append('../../server/')
+
+from server import learn
 
 app = Flask(__name__, static_url_path='')
 CORS(app) 

@@ -36,6 +36,7 @@ def threaded_client(connection):
         for syscall in syscalls:
             if bosc.append_BoSC(syscall) == 'Anomaly':
                 anomalyCount = anomalyCount + 1
+                print("Anomalies ", anomalyCount)
     connection.close()
 
 

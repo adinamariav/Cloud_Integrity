@@ -9,7 +9,7 @@ class Analyze extends Component  {
         return(
             <div className="container">
                 <div>
-                    <div className="card mt-4 row shadow border-info align-items-start" style= {{ width: `50rem`, backgroundColor: `skyblue` }}>
+                    <div className="card mt-4 row shadow border-info align-items-start" style= {{ width: `50rem`, backgroundColor: `lavender` }}>
                         <h1>Analyze</h1>
                         <p>
                             Blalalalalalallalllalalalalalalalalalalalalalalalalala

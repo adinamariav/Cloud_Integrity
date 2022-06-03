@@ -20,7 +20,8 @@
 #include <stdio.h>
 #include <string.h>
 
-
+#include <libvmi/libvmi.h>
+#include <libvmi/events.h>
 
 
 void connect_server(int* cs, struct sockaddr_in* sockcl, struct sockaddr_in* to) {
@@ -77,6 +78,70 @@ void create_csv_file() {
     fclose(fp);
 }
 
+event_response_t print_task_struct(vmi_instance_t vmi) {
+    addr_t list_head = 0, cur_list_entry = 0, next_list_entry = 0;
+    addr_t current_process = 0;
+    char *procname = NULL;
+    vmi_pid_t pid = 0;
+    unsigned long tasks_offset = 0, pid_offset = 0, name_offset = 0;
+    status_t status = VMI_FAILURE;
+    int retcode = 1;
+
+    if ( VMI_FAILURE == vmi_get_offset(vmi, "linux_tasks", &tasks_offset) )
+        return VMI_FAILURE;
+    if ( VMI_FAILURE == vmi_get_offset(vmi, "linux_name", &name_offset) )
+        return VMI_FAILURE;
+    if ( VMI_FAILURE == vmi_get_offset(vmi, "linux_pid", &pid_offset) )
+        return VMI_FAILURE;
+
+    if (vmi_pause_vm(vmi) != VMI_SUCCESS) {
+        printf("Failed to pause VM\n");
+        return VMI_FAILURE;
+    }
+
+    if ( VMI_FAILURE == vmi_translate_ksym2v(vmi, "init_task", &list_head) )
+        return VMI_FAILURE;
+
+    list_head += tasks_offset;
+
+    cur_list_entry = list_head;
+    if (VMI_FAILURE == vmi_read_addr_va(vmi, cur_list_entry, 0, &next_list_entry)) {
+        printf("Failed to read next pointer at %"PRIx64"\n", cur_list_entry);
+        return VMI_FAILURE;
+    }
+
+    while (1) {
+        current_process = cur_list_entry - tasks_offset;
+        vmi_read_32_va(vmi, current_process + pid_offset, 0, (uint32_t*)&pid);
+
+        procname = vmi_read_str_va(vmi, current_process + name_offset, 0);
+
+        if (!procname) {
+            printf("Failed to find procname\n");
+            return VMI_FAILURE;
+        }
+
+        /* print out the process name */
+        printf("[%5d] %s (struct addr:%"PRIx64")\n", pid, procname, current_process);
+        if (procname) {
+            free(procname);
+            procname = NULL;
+        }
+
+        /* follow the next pointer */
+        cur_list_entry = next_list_entry;
+        status = vmi_read_addr_va(vmi, cur_list_entry, 0, &next_list_entry);
+        if (status == VMI_FAILURE) {
+            printf("Failed to read next pointer in loop at %"PRIx64"\n", cur_list_entry);
+            return VMI_FAILURE;
+        } else if (cur_list_entry == list_head) {
+            break;
+        }
+    };
+
+    vmi_resume_vm(vmi);
+}
+
 #pragma region syscall_handlers
 void print_open_flags(int flags) {
     if (!flags)
@@ -128,6 +193,16 @@ void print_open(vmi_instance_t vmi, int pid, reg_t *regs, FILE* fp) {
     free(filename);
 }
 
+void print_execve(vmi_instance_t vmi, int pid, reg_t *regs, FILE* fp) {
+    char *filename = NULL;
+    filename = vmi_read_str_va(vmi, RDI_, pid);
+
+    printf("filename: %s\n", filename);
+
+    free(filename);
+}
+
+
 void print_openat(vmi_instance_t vmi, int pid, reg_t *regs, FILE* fp) {
     char *filename = NULL;
     filename = vmi_read_str_va(vmi, RSI_, pid);
@@ -151,7 +226,7 @@ void print_mprotect(vmi_instance_t vmi, int pid, reg_t *regs, FILE* fp) {
     print_mprotect_flags((unsigned int)RDX_);
 }
 
-void print_args(vmi_instance_t vmi, vmi_event_t *event, int pid, int syscall_id, FILE* fp) {
+void print_args(vmi_instance_t vmi, vmi_event_t *event, int pid, int syscall_id, FILE* fp, int mode) {
     int args_number = 6;
     
     if (args_number <= 0)
@@ -176,6 +251,9 @@ void print_args(vmi_instance_t vmi, vmi_event_t *event, int pid, int syscall_id,
         case 10:
             print_mprotect(vmi, pid, regs, fp);
             break;
+        case 59:
+            print_execve(vmi, pid, regs, fp);
+            break;
         case 257:
             print_openat(vmi, pid, regs, fp);
             break;
@@ -184,10 +262,10 @@ void print_args(vmi_instance_t vmi, vmi_event_t *event, int pid, int syscall_id,
             for (int i = 0; i < args_number; i++) {
                 printf("%u ", (unsigned int)regs[i]);
             }
-            
             break;
     }
 
-    fprintf(fp, "%u, %u, %u, %u, %u, %u\n", (unsigned int)RDI_, (unsigned int)RSI_, (unsigned int)RDX_, (unsigned int)R10_, (unsigned int)R8_, (unsigned int)R9_);
+    if (mode == LEARN_MODE)
+        fprintf(fp, "%u, %u, %u, %u, %u, %u\n", (unsigned int)RDI_, (unsigned int)RSI_, (unsigned int)RDX_, (unsigned int)R10_, (unsigned int)R8_, (unsigned int)R9_);
 }
 #pragma endregion
