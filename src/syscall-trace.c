@@ -38,20 +38,6 @@ char buffer[MAX_BUFSIZE];
 int syscall_index;
 int window_size = 10;
 
-void append_syscall(int syscall_id) {
-    if (syscall_index == window_size) {
-        syscall_index = 0;
-        strcat(buffer, END);
-        write(cs, buffer, strlen(buffer));
-        strcpy(buffer, "");
-    }
-    else {
-        strcat(buffer, sys_index[syscall_id]);
-        strcat(buffer, SEPARATOR);
-        syscall_index++;
-    }
-}
-
 void read_syscall_table() {
     char _line[256];
     char _name[256];
@@ -115,26 +101,46 @@ void process_syscall(vmi_instance_t vmi, vmi_event_t* event) {
 
     uint16_t _index = (uint16_t)rax;
 
+    char** args = (char**)malloc(7 * sizeof (char*));
+
+    for (int i = 0; i < 7; i++) {
+        args[i] = NULL;
+    }
+
+    char* output = (char*)malloc (100 * sizeof(char));
+
     if ((running_mode == SANDBOX_MODE) && (check_set_syscalls(_index) == false)) 
         return;
 
 
     if (_index >= num_sys) {
-        printf("Process[%d]: unknown syscall id: %d\n", pid, _index);
+        sprintf(output, "Process[%d]: unknown syscall id: %d ", pid, _index);
+
         if (running_mode == LEARN_MODE)
             fprintf(fp, "%d, %d, , ", pid, _index);
     }
     else {
-        printf("PID[%d]: %s with args ", pid, sys_index[_index]);
+        sprintf(output, "PID[%d]: %s with args", pid, sys_index[_index]);
 
         if (running_mode == LEARN_MODE)
             fprintf(fp, "%d, %d, %s, ", pid, _index, sys_index[_index]);
         
-        if (running_mode == ANALYSIS_MODE)
-            append_syscall(_index);
+        if (running_mode == ANALYSIS_MODE) {
+            append_syscall(buffer, sys_index[_index], &cs, &syscall_index, window_size);
+        }
+    }
+    args[0] = output;
+    print_args(vmi, event, pid, _index, fp, running_mode, args);
+    
+    for (int i=0;i<7;i++) {
+        if (args[i] != NULL) {
+            printf("%s ", args[i]);
+            free(args[i]);
+        }
     }
 
-    print_args(vmi, event, pid, _index, fp, running_mode);
+    free(args);
+
     printf("\n");
 
     if (running_mode == LEARN_MODE)
@@ -305,7 +311,6 @@ if (VMI_FAILURE == vmi_get_vcpureg(vmi, &lstar, MSR_LSTAR, 0)) {
         return VMI_FAILURE;
     }
 
-    // get number of vcpus
     unsigned int num_vcpus = vmi_get_num_vcpus(vmi);
 
     sstep_event.version = VMI_EVENTS_VERSION;
@@ -341,13 +346,10 @@ int introspect_syscall_trace (char *name, int set_mode, int window_size, int set
     act.sa_handler = close_handler;
     act.sa_flags = 0;
 
-    struct sockaddr_in sockcl;
-    struct sockaddr_in to;
-
     read_syscall_table();
 
     if (running_mode == ANALYSIS_MODE)
-        connect_server(&cs, &sockcl, &to);
+        connect_server(&cs);
 
     sigemptyset(&act.sa_mask);
     sigaction(SIGHUP,  &act, NULL);

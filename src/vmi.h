@@ -18,9 +18,10 @@
  */
 
 //#define MEM_EVENT
-#define LEARN_MODE      0
-#define ANALYSIS_MODE   1
-#define SANDBOX_MODE    2
+#define LEARN_MODE          0
+#define ANALYSIS_MODE       1
+#define SANDBOX_MODE        2
+#define EDUCATIONAL_MODE    3
 
 /* task_struct offsets */
 unsigned long tasks_offset;

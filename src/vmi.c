@@ -22,6 +22,7 @@ int main (int argc, char *argv[]) {
                 printf("learn:		        Create learning database. Can be followed by -s to show output, by -w [window size] and -t [time]\n");
                 printf("analyze:		    Analyze syscalls inside given vm\n");
                 printf("sandbox:		    Print relevant events inside the vm. See README\n");
+                printf("educational:		Print system calls and send them to server. See README\n");
                 return 0;
             case 'v':
                 vm_name = optarg;
@@ -61,6 +62,8 @@ int main (int argc, char *argv[]) {
         introspect_syscall_trace(vm_name, LEARN_MODE, window_size, time);
     } else if (!strcmp(mode, "analyze")) {
         introspect_syscall_trace(vm_name, ANALYSIS_MODE, window_size, time);
+    } else if (!strcmp(mode, "educational")) {
+        introspect_syscall_trace(vm_name, EDUCATIONAL_MODE, window_size, time);
     } else if (!strcmp(mode, "sandbox")) {
         introspect_syscall_trace(vm_name, SANDBOX_MODE, window_size, time);
     } else {
