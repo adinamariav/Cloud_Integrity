@@ -76,7 +76,7 @@ void read_syscall_table() {
 bool check_set_syscalls(int index) {
     if (index < num_sys) {
         for (int i = 0; i < num_set; i++) {
-            if (strcmp(sys_index[index], set_syscalls[i]) == 0) {
+            if (strstr(sys_index[index], set_syscalls[i])) {
                 return true;
             }
         }
@@ -101,17 +101,16 @@ void process_syscall(vmi_instance_t vmi, vmi_event_t* event) {
 
     uint16_t _index = (uint16_t)rax;
 
+    if ((running_mode == SANDBOX_MODE) && (check_set_syscalls(_index) == false)) 
+        return;
+
+    char* output = (char*)malloc (100 * sizeof(char));
+
     char** args = (char**)malloc(7 * sizeof (char*));
 
     for (int i = 0; i < 7; i++) {
         args[i] = NULL;
     }
-
-    char* output = (char*)malloc (100 * sizeof(char));
-
-    if ((running_mode == SANDBOX_MODE) && (check_set_syscalls(_index) == false)) 
-        return;
-
 
     if (_index >= num_sys) {
         sprintf(output, "Process[%d]: unknown syscall id: %d ", pid, _index);
@@ -130,9 +129,13 @@ void process_syscall(vmi_instance_t vmi, vmi_event_t* event) {
         }
     }
     args[0] = output;
-    print_args(vmi, event, pid, _index, fp, running_mode, args);
+    get_args(vmi, event, pid, _index, fp, running_mode, args);
+
+    if ((running_mode == EDUCATIONAL_MODE) || (running_mode == SANDBOX_MODE)) {
+        send_syscall_verbose(args, &cs);
+    }
     
-    for (int i=0;i<7;i++) {
+    for (int i = 0; i < 7; i++) {
         if (args[i] != NULL) {
             printf("%s ", args[i]);
             free(args[i]);
@@ -140,7 +143,6 @@ void process_syscall(vmi_instance_t vmi, vmi_event_t* event) {
     }
 
     free(args);
-
     printf("\n");
 
     if (running_mode == LEARN_MODE)
@@ -348,7 +350,7 @@ int introspect_syscall_trace (char *name, int set_mode, int window_size, int set
 
     read_syscall_table();
 
-    if (running_mode == ANALYSIS_MODE)
+    if ((running_mode == ANALYSIS_MODE) || (running_mode == EDUCATIONAL_MODE) || ((running_mode == SANDBOX_MODE)))
         connect_server(&cs);
 
     sigemptyset(&act.sa_mask);

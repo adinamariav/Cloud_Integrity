@@ -1,3 +1,5 @@
 execve
-socket
+write
 open
+openat
+socket

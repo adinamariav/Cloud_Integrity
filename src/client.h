@@ -19,6 +19,7 @@
 #include <unistd.h>
 #include <stdio.h>
 #include <string.h>
+#include <ctype.h>
 
 #include <libvmi/libvmi.h>
 #include <libvmi/events.h>
@@ -160,7 +161,7 @@ event_response_t print_task_struct(vmi_instance_t vmi) {
 }
 
 #pragma region syscall_handlers
-void print_open_flags(int flags, char** args, int index) {
+void get_open_flags(int flags, char** args, int index) {
     args[index] = (char*)malloc(100 * sizeof(char));
     strcpy(args[index], "");
 
@@ -192,7 +193,7 @@ void print_open_flags(int flags, char** args, int index) {
         strcat(args[index], "O_CLOEXEC ");
 }
 
-void print_mprotect_flags(int flags, char** args) {
+void get_mprotect_flags(int flags, char** args) {
     args[3] = (char*)malloc(100 * sizeof(char));
     strcpy(args[3], "");
 
@@ -206,7 +207,7 @@ void print_mprotect_flags(int flags, char** args) {
         strcat(args[3], "PROT_EXEC ");
 }
 
-void print_open(vmi_instance_t vmi, int pid, reg_t *regs, FILE* fp, char** args) {
+void get_open_args(vmi_instance_t vmi, int pid, reg_t *regs, FILE* fp, char** args) {
     char *filename = NULL;
     filename = vmi_read_str_va(vmi, RDI_, pid);
 
@@ -220,10 +221,10 @@ void print_open(vmi_instance_t vmi, int pid, reg_t *regs, FILE* fp, char** args)
     args[2] = (char*)malloc(30 * sizeof (char));
     sprintf(args[2], "mode: %u", (unsigned int)RSI_);
 
-    print_open_flags((unsigned int)RDX_, args, 3);
+    get_open_flags((unsigned int)RDX_, args, 3);
 }
 
-void print_execve(vmi_instance_t vmi, int pid, reg_t *regs, FILE* fp, char** args) {
+void get_execve_args(vmi_instance_t vmi, int pid, reg_t *regs, FILE* fp, char** args) {
     char *filename = NULL;
     filename = vmi_read_str_va(vmi, RDI_, pid);
 
@@ -236,7 +237,7 @@ void print_execve(vmi_instance_t vmi, int pid, reg_t *regs, FILE* fp, char** arg
 }
 
 
-void print_openat(vmi_instance_t vmi, int pid, reg_t *regs, FILE* fp, char** args) {
+void get_openat_args(vmi_instance_t vmi, int pid, reg_t *regs, FILE* fp, char** args) {
     char *filename = NULL;
     filename = vmi_read_str_va(vmi, RSI_, pid);
 
@@ -253,10 +254,10 @@ void print_openat(vmi_instance_t vmi, int pid, reg_t *regs, FILE* fp, char** arg
     args[3] = (char*)malloc(30 * sizeof (char));
     sprintf(args[3], "mode: %u", (unsigned int)RDX_);
 
-    print_open_flags((unsigned int)R10_, args, 4);
+    get_open_flags((unsigned int)R10_, args, 4);
 }
 
-void print_write(vmi_instance_t vmi, int pid, reg_t *regs, FILE* fp, char** args) {
+void get_write_args(vmi_instance_t vmi, int pid, reg_t *regs, FILE* fp, char** args) {
     char *buffer = NULL;
     buffer = vmi_read_str_va(vmi, RSI_, pid);
 
@@ -271,20 +272,20 @@ void print_write(vmi_instance_t vmi, int pid, reg_t *regs, FILE* fp, char** args
     }
 
     args[3] = (char*)malloc(30 * sizeof (char));
-    sprintf(args[3], ", count:  %u", (unsigned int)RDX_);
+    sprintf(args[3], "count:  %u", (unsigned int)RDX_);
 }
 
-void print_mprotect(vmi_instance_t vmi, int pid, reg_t *regs, FILE* fp, char** args) {
+void get_mprotect_args(vmi_instance_t vmi, int pid, reg_t *regs, FILE* fp, char** args) {
     args[1] = (char*)malloc(30 * sizeof (char));
     sprintf(args[1], "start addr: 0x%lx", (unsigned long)RDI_);
 
     args[2] = (char*)malloc(30 * sizeof (char));
     sprintf(args[2], "len: %u", (unsigned int)RSI_);
 
-    print_mprotect_flags((unsigned int)RDX_, args);
+    get_mprotect_flags((unsigned int)RDX_, args);
 }
 
-void print_args(vmi_instance_t vmi, vmi_event_t *event, int pid, int syscall_id, FILE* fp, int mode, char** args) {
+void get_args(vmi_instance_t vmi, vmi_event_t *event, int pid, int syscall_id, FILE* fp, int mode, char** args) {
     int args_number = 6;
     
     reg_t regs[6];
@@ -298,19 +299,19 @@ void print_args(vmi_instance_t vmi, vmi_event_t *event, int pid, int syscall_id,
 
     switch (syscall_id) {
         case 1:
-            print_write(vmi, pid, regs, fp, args);
+            get_write_args(vmi, pid, regs, fp, args);
             break;
         case 2:
-            print_open(vmi, pid, regs, fp, args);
+            get_open_args(vmi, pid, regs, fp, args);
             break;
         case 10:
-            print_mprotect(vmi, pid, regs, fp, args);
+            get_mprotect_args(vmi, pid, regs, fp, args);
             break;
         case 59:
-            print_execve(vmi, pid, regs, fp, args);
+            get_execve_args(vmi, pid, regs, fp, args);
             break;
         case 257:
-            print_openat(vmi, pid, regs, fp, args);
+            get_openat_args(vmi, pid, regs, fp, args);
             break;
         
         default:
@@ -328,6 +329,47 @@ void print_args(vmi_instance_t vmi, vmi_event_t *event, int pid, int syscall_id,
 }
 #pragma endregion
 
-void send_syscall_verbose(char* syscall, int* socket) {
-    
+bool make_readable(char* str) {
+    int len = strlen(str);
+
+    for (int i = 0; i < len; i++) {
+        if (!isprint(str[i]))
+            str[i] = '.';
+    }
+
+    return true;
+}
+
+void send_syscall_verbose(char** syscall, int* socket) {
+    int total_size = 0;
+    int bytes_sent = MAX_BUFSIZE;
+
+    for (int i = 0; i < 7; i++) {
+        if (syscall[i] != NULL) {
+            total_size += strlen(syscall[i]);
+        } else {
+            total_size += 15;
+        }
+    }
+
+    char* socket_buffer = (char*)malloc((total_size + 100) * sizeof (char));
+    strcpy(socket_buffer, "");
+
+    for (int i = 0; i < 7; i++) {
+        
+        if (syscall[i] != NULL) {
+            make_readable(syscall[i]);
+
+            strcat(socket_buffer, syscall[i]);
+            strcat(socket_buffer, "*");
+        }
+    }
+
+    strcat(socket_buffer, "end*");
+
+    total_size = strlen(socket_buffer);
+
+    write(*socket, socket_buffer, total_size);
+
+    free(socket_buffer);
 }

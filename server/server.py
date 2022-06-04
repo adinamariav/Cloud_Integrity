@@ -14,7 +14,7 @@ def learn(name, time):
     create_lookup_table()
     bosc.create_learning_db()
 
-def threaded_client(connection):
+def analysis_client(connection):
     global anomalyCount
     while True:
         bytes_recd = 0
@@ -39,6 +39,44 @@ def threaded_client(connection):
                 print("Anomalies ", anomalyCount)
     connection.close()
 
+def educational_client(connection):
+    start = "**"
+    while True:
+        bytes_recd = 0
+        chunks = []
+        chunk = start
+        end = 0
+        while end == 0:
+            chunk = connection.recv(1024)
+            if chunk == b'':
+                raise RuntimeError("socket connection broken")
+            bytes_recd = bytes_recd + len(chunk)
+
+            if b'*end*' in chunk:
+                end = 1
+                split = chunk.split(b'*')
+                split.pop()
+                if split[-1] != b'end':
+                    split.pop()
+                    start = split[-1].decode("utf-8")
+                    print("AICI", start)
+                    start += "*"
+                else:
+                    start = "**"
+
+
+            try:
+                chunks.append(chunk.decode("utf-8"))
+            except UnicodeDecodeError:
+                chunks.append("unreadable characters")
+
+            
+        chunks =  ''.join(chunks)
+        chunks = chunks[:-2]
+        syscalls = chunks.split("*")
+        syscalls.pop()
+        print(syscalls)
+
 
 if len(sys.argv) > 1:
     if sys.argv[1] == "--learn":
@@ -46,7 +84,7 @@ if len(sys.argv) > 1:
         create_lookup_table()
         bosc.create_learning_db()
   
-    elif sys.argv[1] == "--analyze":
+    elif (sys.argv[1] == "--analyze") or (sys.argv[1] == "--educational"):
         ServerSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         host = '127.0.0.1'
         port = 1233
@@ -60,7 +98,10 @@ if len(sys.argv) > 1:
         while True:
             Client, address = ServerSocket.accept()
             print('Connected to: ' + address[0] + ':' + str(address[1]))
-            start_new_thread(threaded_client, (Client, ))
+            if sys.argv[1] == "--analyze":
+                start_new_thread(analysis_client, (Client, ))
+            elif sys.argv[1] == "--educational":
+                start_new_thread(educational_client, (Client, ))
             ThreadCount += 1
             print('Thread Number: ' + str(ThreadCount))
         ServerSocket.close()
