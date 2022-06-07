@@ -104,22 +104,28 @@ void process_syscall(vmi_instance_t vmi, vmi_event_t* event) {
     if ((running_mode == SANDBOX_MODE) && (check_set_syscalls(_index) == false)) 
         return;
 
-    char* output = (char*)malloc (100 * sizeof(char));
+    char* pid_str = (char*)malloc (10 * sizeof(char));
 
-    char** args = (char**)malloc(7 * sizeof (char*));
+    char** args = (char**)malloc(8 * sizeof (char*));
+    char* syscall_name = (char*)malloc(50 * sizeof (char*));
 
-    for (int i = 0; i < 7; i++) {
+    for (int i = 0; i < 8; i++) {
         args[i] = NULL;
     }
 
     if (_index >= num_sys) {
-        sprintf(output, "Process[%d]: unknown syscall id: %d ", pid, _index);
+        sprintf(pid_str, "%d", pid);
+        args[0] = pid_str;
+        args[1] = strdup("unknown syscall id");
+        
 
         if (running_mode == LEARN_MODE)
             fprintf(fp, "%d, %d, , ", pid, _index);
     }
     else {
-        sprintf(output, "PID[%d]: %s with args", pid, sys_index[_index]);
+        sprintf(pid_str, "%d", pid);
+        args[0] = pid_str;
+        args[1] = strdup(sys_index[_index]);
 
         if (running_mode == LEARN_MODE)
             fprintf(fp, "%d, %d, %s, ", pid, _index, sys_index[_index]);
@@ -128,14 +134,15 @@ void process_syscall(vmi_instance_t vmi, vmi_event_t* event) {
             append_syscall(buffer, sys_index[_index], &cs, &syscall_index, window_size);
         }
     }
-    args[0] = output;
+ 
     get_args(vmi, event, pid, _index, fp, running_mode, args);
 
     if ((running_mode == EDUCATIONAL_MODE) || (running_mode == SANDBOX_MODE)) {
         send_syscall_verbose(args, &cs);
     }
+
     
-    for (int i = 0; i < 7; i++) {
+    for (int i = 0; i < 8; i++) {
         if (args[i] != NULL) {
             printf("%s ", args[i]);
             free(args[i]);
@@ -350,8 +357,10 @@ int introspect_syscall_trace (char *name, int set_mode, int window_size, int set
 
     read_syscall_table();
 
-    if ((running_mode == ANALYSIS_MODE) || (running_mode == EDUCATIONAL_MODE) || ((running_mode == SANDBOX_MODE)))
-        connect_server(&cs);
+    if (running_mode == ANALYSIS_MODE)
+        connect_server(&cs, ANALYSIS_SERVER_PORT);
+    else if ((running_mode == EDUCATIONAL_MODE) || (running_mode == SANDBOX_MODE))
+        connect_server(&cs, FLASK_SERVER_PORT);
 
     sigemptyset(&act.sa_mask);
     sigaction(SIGHUP,  &act, NULL);

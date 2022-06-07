@@ -30,6 +30,29 @@ export class DataProvider extends Component {
         }
     }
 
+    startVM = () => {
+        const {vmName} = this.state;
+
+        try {
+            if (vmName == "Select VM") {
+                alert("Please select a VM first!");
+            }
+            else {
+                axios.get('/start/vm', {
+                    params: {
+                        name: vmName,
+                    }
+                })
+                .then(function (response) {
+                    alert(response);
+                })
+            }
+        }
+        catch (error) {
+            alert("Error starting VM");
+        }
+    }
+
     analyzeTimeChanged = (value) => {
         var today = new Date();
         var date = value.split(":");

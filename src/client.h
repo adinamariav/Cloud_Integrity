@@ -9,6 +9,8 @@
 #define R8_  regs[4]
 #define R9_  regs[5]
 
+#define ANALYSIS_SERVER_PORT 1233
+#define FLASK_SERVER_PORT 1234
 
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -26,7 +28,7 @@
 
 #include "string.h"
 
-void connect_server(int* cs) {
+void connect_server(int* cs, int port) {
     struct addrinfo hints;
     struct addrinfo *res, *tmp;
     char host[256];
@@ -58,7 +60,7 @@ void connect_server(int* cs) {
 	sockcl.sin_addr.s_addr=inet_addr(host);
 
 	to.sin_family=AF_INET;
-	to.sin_port = htons(1233);
+	to.sin_port = htons(port);
 	to.sin_addr.s_addr = inet_addr(ip_server);
 
 	if (bind(*cs, (struct sockaddr *)&sockcl, sizeof(sockcl)) < 0)
@@ -95,71 +97,6 @@ void create_csv_file() {
     fprintf(fp, "PID, SyscallID, Syscall, RDI, RSI, RDX, R10, R8, R9\n");
     fclose(fp);
 }
-
-event_response_t print_task_struct(vmi_instance_t vmi) {
-    addr_t list_head = 0, cur_list_entry = 0, next_list_entry = 0;
-    addr_t current_process = 0;
-    char *procname = NULL;
-    vmi_pid_t pid = 0;
-    unsigned long tasks_offset = 0, pid_offset = 0, name_offset = 0;
-    status_t status = VMI_FAILURE;
-    int retcode = 1;
-
-    if ( VMI_FAILURE == vmi_get_offset(vmi, "linux_tasks", &tasks_offset) )
-        return VMI_FAILURE;
-    if ( VMI_FAILURE == vmi_get_offset(vmi, "linux_name", &name_offset) )
-        return VMI_FAILURE;
-    if ( VMI_FAILURE == vmi_get_offset(vmi, "linux_pid", &pid_offset) )
-        return VMI_FAILURE;
-
-    if (vmi_pause_vm(vmi) != VMI_SUCCESS) {
-        printf("Failed to pause VM\n");
-        return VMI_FAILURE;
-    }
-
-    if ( VMI_FAILURE == vmi_translate_ksym2v(vmi, "init_task", &list_head) )
-        return VMI_FAILURE;
-
-    list_head += tasks_offset;
-
-    cur_list_entry = list_head;
-    if (VMI_FAILURE == vmi_read_addr_va(vmi, cur_list_entry, 0, &next_list_entry)) {
-        printf("Failed to read next pointer at %"PRIx64"\n", cur_list_entry);
-        return VMI_FAILURE;
-    }
-
-    while (1) {
-        current_process = cur_list_entry - tasks_offset;
-        vmi_read_32_va(vmi, current_process + pid_offset, 0, (uint32_t*)&pid);
-
-        procname = vmi_read_str_va(vmi, current_process + name_offset, 0);
-
-        if (!procname) {
-            printf("Failed to find procname\n");
-            return VMI_FAILURE;
-        }
-
-        /* print out the process name */
-        printf("[%5d] %s (struct addr:%"PRIx64")\n", pid, procname, current_process);
-        if (procname) {
-            free(procname);
-            procname = NULL;
-        }
-
-        /* follow the next pointer */
-        cur_list_entry = next_list_entry;
-        status = vmi_read_addr_va(vmi, cur_list_entry, 0, &next_list_entry);
-        if (status == VMI_FAILURE) {
-            printf("Failed to read next pointer in loop at %"PRIx64"\n", cur_list_entry);
-            return VMI_FAILURE;
-        } else if (cur_list_entry == list_head) {
-            break;
-        }
-    };
-
-    vmi_resume_vm(vmi);
-}
-
 #pragma region syscall_handlers
 void get_open_flags(int flags, char** args, int index) {
     args[index] = (char*)malloc(100 * sizeof(char));
@@ -194,55 +131,22 @@ void get_open_flags(int flags, char** args, int index) {
 }
 
 void get_mprotect_flags(int flags, char** args) {
-    args[3] = (char*)malloc(100 * sizeof(char));
-    strcpy(args[3], "");
+    args[4] = (char*)malloc(100 * sizeof(char));
+    strcpy(args[4], "");
 
     if (!flags)
-        strcat(args[3], "PROT_NONE ");
+        strcat(args[4], "PROT_NONE ");
     if (flags & PROT_READ)
-        strcat(args[3], "PROT_READ ");
+        strcat(args[4], "PROT_READ ");
     if (flags & PROT_WRITE)
-        strcat(args[3], "PROT_WRITE ");
+        strcat(args[4], "PROT_WRITE ");
     if (flags & PROT_EXEC)
-        strcat(args[3], "PROT_EXEC ");
+        strcat(args[4], "PROT_EXEC ");
 }
 
 void get_open_args(vmi_instance_t vmi, int pid, reg_t *regs, FILE* fp, char** args) {
     char *filename = NULL;
     filename = vmi_read_str_va(vmi, RDI_, pid);
-
-    if (filename) {
-        args[1] = strdup(filename);
-        free(filename);
-    } else {
-        args[1] = strdup("null");
-    }
-
-    args[2] = (char*)malloc(30 * sizeof (char));
-    sprintf(args[2], "mode: %u", (unsigned int)RSI_);
-
-    get_open_flags((unsigned int)RDX_, args, 3);
-}
-
-void get_execve_args(vmi_instance_t vmi, int pid, reg_t *regs, FILE* fp, char** args) {
-    char *filename = NULL;
-    filename = vmi_read_str_va(vmi, RDI_, pid);
-
-    if (filename) {
-        args[1] = strdup(filename);
-        free(filename);
-    } else {
-        args[1] = strdup("null");
-    }
-}
-
-
-void get_openat_args(vmi_instance_t vmi, int pid, reg_t *regs, FILE* fp, char** args) {
-    char *filename = NULL;
-    filename = vmi_read_str_va(vmi, RSI_, pid);
-
-    args[1] = (char*)malloc(30 * sizeof (char));
-    sprintf(args[1], "DFD: %u", (unsigned int)RDI_);
 
     if (filename) {
         args[2] = strdup(filename);
@@ -252,35 +156,68 @@ void get_openat_args(vmi_instance_t vmi, int pid, reg_t *regs, FILE* fp, char** 
     }
 
     args[3] = (char*)malloc(30 * sizeof (char));
-    sprintf(args[3], "mode: %u", (unsigned int)RDX_);
+    sprintf(args[3], "mode: %u", (unsigned int)RSI_);
 
-    get_open_flags((unsigned int)R10_, args, 4);
+    get_open_flags((unsigned int)RDX_, args, 4);
+}
+
+void get_execve_args(vmi_instance_t vmi, int pid, reg_t *regs, FILE* fp, char** args) {
+    char *filename = NULL;
+    filename = vmi_read_str_va(vmi, RDI_, pid);
+
+    if (filename) {
+        args[2] = strdup(filename);
+        free(filename);
+    } else {
+        args[2] = strdup("null");
+    }
+}
+
+
+void get_openat_args(vmi_instance_t vmi, int pid, reg_t *regs, FILE* fp, char** args) {
+    char *filename = NULL;
+    filename = vmi_read_str_va(vmi, RSI_, pid);
+
+    args[2] = (char*)malloc(30 * sizeof (char));
+    sprintf(args[2], "DFD: %u", (unsigned int)RDI_);
+
+    if (filename) {
+        args[3] = strdup(filename);
+        free(filename);
+    } else {
+        args[3] = strdup("null");
+    }
+
+    args[4] = (char*)malloc(30 * sizeof (char));
+    sprintf(args[4], "mode: %u", (unsigned int)RDX_);
+
+    get_open_flags((unsigned int)R10_, args, 5);
 }
 
 void get_write_args(vmi_instance_t vmi, int pid, reg_t *regs, FILE* fp, char** args) {
     char *buffer = NULL;
     buffer = vmi_read_str_va(vmi, RSI_, pid);
 
-    args[1] = (char*)malloc(30 * sizeof (char));
-    sprintf(args[1], "fd: %u", (unsigned int)RDI_);
+    args[2] = (char*)malloc(30 * sizeof (char));
+    sprintf(args[2], "fd: %u", (unsigned int)RDI_);
 
     if (buffer) {
-        args[2] = strdup(buffer);
+        args[3] = strdup(buffer);
         free(buffer);
     } else {
-        args[2] = strdup("null");
+        args[3] = strdup("null");
     }
 
-    args[3] = (char*)malloc(30 * sizeof (char));
-    sprintf(args[3], "count:  %u", (unsigned int)RDX_);
+    args[4] = (char*)malloc(30 * sizeof (char));
+    sprintf(args[4], "count:  %u", (unsigned int)RDX_);
 }
 
 void get_mprotect_args(vmi_instance_t vmi, int pid, reg_t *regs, FILE* fp, char** args) {
-    args[1] = (char*)malloc(30 * sizeof (char));
-    sprintf(args[1], "start addr: 0x%lx", (unsigned long)RDI_);
-
     args[2] = (char*)malloc(30 * sizeof (char));
-    sprintf(args[2], "len: %u", (unsigned int)RSI_);
+    sprintf(args[2], "start addr: 0x%lx", (unsigned long)RDI_);
+
+    args[3] = (char*)malloc(30 * sizeof (char));
+    sprintf(args[3], "len: %u", (unsigned int)RSI_);
 
     get_mprotect_flags((unsigned int)RDX_, args);
 }
@@ -318,8 +255,8 @@ void get_args(vmi_instance_t vmi, vmi_event_t *event, int pid, int syscall_id, F
             for (int i = 0; i < args_number; i++) {
                 char* output = (char*)malloc(50 * sizeof(char));
 
-                sprintf(output, "%u ", (unsigned int)regs[i]);
-                args[i + 1] = output;
+                sprintf(output, "%u", (unsigned int)regs[i]);
+                args[i + 2] = output;
             }
             break;
     }
@@ -344,7 +281,7 @@ void send_syscall_verbose(char** syscall, int* socket) {
     int total_size = 0;
     int bytes_sent = MAX_BUFSIZE;
 
-    for (int i = 0; i < 7; i++) {
+    for (int i = 0; i < 8; i++) {
         if (syscall[i] != NULL) {
             total_size += strlen(syscall[i]);
         } else {
@@ -355,7 +292,7 @@ void send_syscall_verbose(char** syscall, int* socket) {
     char* socket_buffer = (char*)malloc((total_size + 100) * sizeof (char));
     strcpy(socket_buffer, "");
 
-    for (int i = 0; i < 7; i++) {
+    for (int i = 0; i < 8; i++) {
         
         if (syscall[i] != NULL) {
             make_readable(syscall[i]);

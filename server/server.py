@@ -63,14 +63,10 @@ def educational_client(connection):
                     start += "*"
                 else:
                     start = "**"
-
-
             try:
                 chunks.append(chunk.decode("utf-8"))
             except UnicodeDecodeError:
                 chunks.append("unreadable characters")
-
-            
         chunks =  ''.join(chunks)
         chunks = chunks[:-2]
         syscalls = chunks.split("*")

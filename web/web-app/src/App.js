@@ -5,6 +5,7 @@ import About from './components/pages/About';
 import Syscalls from './components/pages/Syscalls';
 import { DataProvider } from './components/includes/Context';
 import Navbar from './components/includes/Navbar';
+import Educational from './components/pages/Educational';
 
 import { BrowserRouter as Router, Route, Routes } from 'react-router-dom'
 
@@ -18,6 +19,7 @@ function App() {
             <Route path = "/" element={<Home />} />
             <Route path = "/about" element={<About />} />
             <Route path = "/syscalls" element={<Syscalls />} />
+            <Route path = "/educational" element={<Educational />} />
           </Routes>
         </div>
       </DataProvider>
