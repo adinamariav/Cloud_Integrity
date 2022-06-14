@@ -144,13 +144,14 @@ void process_syscall(vmi_instance_t vmi, vmi_event_t* event) {
     
     for (int i = 0; i < 8; i++) {
         if (args[i] != NULL) {
-            printf("%s ", args[i]);
+            make_readable(args[i]);
+      //      printf("%s ", args[i]);
             free(args[i]);
         }
     }
 
     free(args);
-    printf("\n");
+  //  printf("\n");
 
     if (running_mode == LEARN_MODE)
         fclose(fp);
@@ -446,8 +447,11 @@ error_exit:
 
     vmi_destroy(vmi);
 
-    if (running_mode == ANALYSIS_MODE)
+  //  if (running_mode == ANALYSIS_MODE) {
+        write(cs, "finished", strlen("finished"));
         close(cs);
+  //  }
+    
 
     return 0;
 }

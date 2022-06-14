@@ -1,29 +1,40 @@
 import React, { Component } from 'react'
 import {Redirect} from 'react-router-dom'
 import axios from 'axios';
+import io from "socket.io-client"
 
 export const DataContext = React.createContext();
-
+export const socket = io.connect(null, {port: 5000, rememberTransport: false});
 
 export class DataProvider extends Component {
 
     state = {
         vmName : [],
         analyzeTime: [],
-        learnTime: []
+        educationalTime: [],
+        isEducationalStarted: false,
+        isVMStarted: false, 
+        endDate: []
     }
 
-    start = () => {
-        const {vmName} = this.state;
+    startEducational = () => {
+        const { vmName } = this.state;
+        const { educationalTime } = this.state;
         try {
-            //const { data } = await axios.post('/run/syscalls', {vmName});
-            
-            if (vmName == "Select VM") {
+            this.setState( { isEducationalStarted : true } )
+
+            if (vmName === "Select VM") {
                 alert("Please select a VM first!");
+                return
             }
-            else {
-                alert(`${vmName}`);
+
+            if (!educationalTime) {
+                alert("Please set the time first!");
+                return
             }
+
+            socket.emit('startEducational', vmName, educationalTime);
+
         }
         catch (error) {
 
@@ -34,51 +45,40 @@ export class DataProvider extends Component {
         const {vmName} = this.state;
 
         try {
-            if (vmName == "Select VM") {
+            if (vmName === "Select VM") {
                 alert("Please select a VM first!");
             }
             else {
-                axios.get('/start/vm', {
-                    params: {
-                        name: vmName,
-                    }
-                })
-                .then(function (response) {
-                    alert(response);
-                })
+                socket.emit('startvm', vmName);
+                this.setState( { isVMStarted : true } )
             }
         }
         catch (error) {
             alert("Error starting VM");
         }
+
     }
 
-    analyzeTimeChanged = (value) => {
-        var today = new Date();
-        var date = value.split(":");
-
-        var year = today.getFullYear()
-        var month = today.getMonth()
-        var day = today.getDate()
-        var start = new Date(year, month, day, date[0], date[1])
-
-        var seconds = Math.abs(start - today) / 1000
-
-        this.setState( { analyzeTime : seconds } )
+    stopEducational = () => {
+        this.setState( { isEducationalStarted : false } )
     }
 
-    learnTimeChanged = (value) => {
-        var today = new Date();
-        var date = value.split(":");
+    analyzeTimeChanged = (event) => {
+        const time = event.target.value;
+        const end = new Date();
+        const endDate = new Date(end.getTime() + time * 60000);
 
-        var year = today.getFullYear()
-        var month = today.getMonth()
-        var day = today.getDate()
-        var start = new Date(year, month, day, date[0], date[1])
+        this.setState( { analyzeTime : time } )
+        this.setState( { endDate : endDate } )
+    }
 
-        var seconds = Math.abs(start - today) / 1000
+    educationalTimeChanged = (event) => {
+        const time = event.target.value;
+        const end = new Date();
+        const endDate = new Date(end.getTime() + time * 60000);
 
-        this.setState( { learnTime : seconds } )
+        this.setState( { educationalTime : time } )
+        this.setState( { endDate : endDate } )
     }
 
     selectVM = (vm) => {
@@ -90,11 +90,11 @@ export class DataProvider extends Component {
     }
 
     render() {
-        const {vmName, learnTime, analyzeTime} = this.state;
-        const {start, selectVM, learnTimeChanged, analyzeTimeChanged} = this;
+        const { vmName, educationalTime, analyzeTime, isAnalysisStarted, isEducationalStarted, isVMStarted, endDate } = this.state;
+        const { startEducational, selectVM, startVM, educationalTimeChanged, analyzeTimeChanged, stopEducational } = this;
         return (
             <div>
-                <DataContext.Provider value={{ vmName, learnTime, analyzeTime, start, selectVM, learnTimeChanged, analyzeTimeChanged }}>
+                <DataContext.Provider value={{ vmName, educationalTime, analyzeTime, socket, isAnalysisStarted, isEducationalStarted, isVMStarted, endDate, startEducational, startVM, selectVM, educationalTimeChanged, analyzeTimeChanged, stopEducational }}>
                     {this.props.children}
                 </DataContext.Provider>
             </div>

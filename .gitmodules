@@ -1,3 +1,6 @@
 [submodule "lib/libvmi"]
 	path = lib/libvmi
 	url = https://github.com/libvmi/libvmi
+[submodule "web/server/flask-remote-terminal"]
+	path = web/server/flask-remote-terminal
+	url = https://github.com/Fisherworks/flask-remote-terminal.git
