@@ -1,5 +1,4 @@
-execve
 write
-open
 openat
+execve
 socket

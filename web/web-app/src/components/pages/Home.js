@@ -6,7 +6,7 @@ import EducationalCard from "../includes/EducationalCard.js";
 function Home() {
     return(
         <div className="container">
-            <div className="card mt-4" style = {{ backgroundColor: `gainsboro`, paddingLeft: `10rem`, paddingRight: `10rem`}}>
+            <div className="card mt-4" style = {{ backgroundColor: `#F4F9F9`, paddingLeft: `10rem`, paddingRight: `10rem`}}>
                 <div className="card-body">
                     <h1 style = {{ textAlign: `center` }}>Please select one of the operating modes:</h1>
                     <div style={{paddingTop: `2rem`}}>

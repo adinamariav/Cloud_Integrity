@@ -9,6 +9,7 @@ reg_t lstar;
 
 int running_mode;
 int cs;
+int cs2;
 
 #ifndef MEM_EVENT
 char saved_opcode = 0;
@@ -121,8 +122,7 @@ void process_syscall(vmi_instance_t vmi, vmi_event_t* event) {
 
         if (running_mode == LEARN_MODE)
             fprintf(fp, "%d, %d, , ", pid, _index);
-    }
-    else {
+    } else {
         sprintf(pid_str, "%d", pid);
         args[0] = pid_str;
         args[1] = strdup(sys_index[_index]);
@@ -137,10 +137,12 @@ void process_syscall(vmi_instance_t vmi, vmi_event_t* event) {
  
     get_args(vmi, event, pid, _index, fp, running_mode, args);
 
-    if ((running_mode == EDUCATIONAL_MODE) || (running_mode == SANDBOX_MODE)) {
+    if ((running_mode == ANALYSIS_MODE)) {
+        send_syscall_verbose(args, &cs2);
+    } else {
         send_syscall_verbose(args, &cs);
     }
-
+        
     
     for (int i = 0; i < 8; i++) {
         if (args[i] != NULL) {
@@ -358,10 +360,12 @@ int introspect_syscall_trace (char *name, int set_mode, int window_size, int set
 
     read_syscall_table();
 
-    if (running_mode == ANALYSIS_MODE)
+    if (running_mode == ANALYSIS_MODE) {
         connect_server(&cs, ANALYSIS_SERVER_PORT);
-    else if ((running_mode == EDUCATIONAL_MODE) || (running_mode == SANDBOX_MODE))
+        connect_server(&cs2, FLASK_SERVER_PORT);
+    } else { 
         connect_server(&cs, FLASK_SERVER_PORT);
+    }
 
     sigemptyset(&act.sa_mask);
     sigaction(SIGHUP,  &act, NULL);

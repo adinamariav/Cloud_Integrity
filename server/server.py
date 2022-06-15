@@ -5,18 +5,24 @@ from analyse_trace import create_lookup_table
 import subprocess
 import socket
 import sys
+import os
+import shlex
 
 bosc = BoSC_Creator(10)
 anomalyCount = 0
     
 def learn(name, time):
-    #subprocess.run(['./vmi', '-v', name, '-t', time, '-a', '-m', 'syscall-trace'])
+    os.chdir('../../')
+    command = "sudo ./vmi -m learn -v " + name + " -t " + time
+    subprocess.run(shlex.split(command))
     create_lookup_table()
     bosc.create_learning_db()
+    os.chdir("web/server/")
 
 def analysis_client(connection):
     global anomalyCount
-    while True:
+    run = True
+    while run == True:
         bytes_recd = 0
         chunks = []
         chunk = ",,"
@@ -37,50 +43,41 @@ def analysis_client(connection):
             if bosc.append_BoSC(syscall) == 'Anomaly':
                 anomalyCount = anomalyCount + 1
                 print("Anomalies ", anomalyCount)
+                if (anomalyCount > 10):
+                    run = False
     connection.close()
 
-def educational_client(connection):
-    start = "**"
-    while True:
-        bytes_recd = 0
-        chunks = []
-        chunk = start
-        end = 0
-        while end == 0:
-            chunk = connection.recv(1024)
-            if chunk == b'':
-                raise RuntimeError("socket connection broken")
-            bytes_recd = bytes_recd + len(chunk)
+def analyze(name, time):
+    os.chdir('../../')
+    command = "sudo ./vmi -m analyze -v " + name + " -t " + time
+    subprocess.Popen(command, shell=True)
+    os.chdir("web/server/")
 
-            if b'*end*' in chunk:
-                end = 1
-                split = chunk.split(b'*')
-                split.pop()
-                if split[-1] != b'end':
-                    split.pop()
-                    start = split[-1].decode("utf-8")
-                    print("AICI", start)
-                    start += "*"
-                else:
-                    start = "**"
-            try:
-                chunks.append(chunk.decode("utf-8"))
-            except UnicodeDecodeError:
-                chunks.append("unreadable characters")
-        chunks =  ''.join(chunks)
-        chunks = chunks[:-2]
-        syscalls = chunks.split("*")
-        syscalls.pop()
-        print(syscalls)
+    ServerSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    host = '127.0.0.1'
+    port = 1233
+    try:
+        ServerSocket.bind((host, port))
+    except socket.error as e:
+        print(str(e))
+    print('Waiting for a connection (analysis server)')
+    ServerSocket.listen(5)
+    Client, address = ServerSocket.accept()
+    print('Connected to: ' + address[0] + ':' + str(address[1]))
+    analysis_client(Client)
+    ServerSocket.close()
 
 
 if len(sys.argv) > 1:
     if sys.argv[1] == "--learn":
-        #subprocess.run(['./vmi', '-v', sys.argv[2], '-t', sys.argv[3], '-m', 'syscall-trace'])
+        os.chdir('../')
+        command = "sudo ./vmi -m learn -v " + sys.argv[2] + " -t " + sys.argv[3]
+        subprocess.run(shlex.split(command))
+        os.chdir("server/")
         create_lookup_table()
         bosc.create_learning_db()
   
-    elif (sys.argv[1] == "--analyze") or (sys.argv[1] == "--educational"):
+    elif (sys.argv[1] == "--analyze"):
         ServerSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         host = '127.0.0.1'
         port = 1233
@@ -96,8 +93,6 @@ if len(sys.argv) > 1:
             print('Connected to: ' + address[0] + ':' + str(address[1]))
             if sys.argv[1] == "--analyze":
                 start_new_thread(analysis_client, (Client, ))
-            elif sys.argv[1] == "--educational":
-                start_new_thread(educational_client, (Client, ))
             ThreadCount += 1
             print('Thread Number: ' + str(ThreadCount))
         ServerSocket.close()

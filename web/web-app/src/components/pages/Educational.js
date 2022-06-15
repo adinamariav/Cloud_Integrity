@@ -11,9 +11,9 @@ class Educational extends Component {
     
     render () {
         return(
-            <div className="container-fluid mt-2 ml-5">
+            <div className="container-fluid mt-4 ml-5">
                 <div className="card" style= {{ maxWidth:`95%` }}>
-                    <div className="row card-body" style = {{ backgroundColor: `#D3E0EA`}}>
+                    <div className="row card-body" style = {{ backgroundColor: `#D3E0EA`, minHeight:`90vh`}}>
                         <div className="col center" style =  {{ display: 'flex', 
                                                                 alignItems: 'center',
                                                                 flexDirection: `col`,

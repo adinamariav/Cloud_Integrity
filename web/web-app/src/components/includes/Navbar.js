@@ -22,7 +22,7 @@ function Navbar() {
                             More options
                         </a>
                         <ul class="dropdown-menu" aria-labelledby="navbarDropdown">
-                            <li><Link class="dropdown-item" to="/syscalls">View system calls</Link></li>
+                            {/* <li><Link class="dropdown-item" to="/syscalls">View system calls</Link></li> */}
                         </ul>    
                     </li>
                 </ul>

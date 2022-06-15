@@ -4,6 +4,7 @@ from flask_cors import CORS
 from flask_socketio import *
 from eventlet.green import subprocess
 import time
+from types import SimpleNamespace
 import threading
 import os
 import json
@@ -15,12 +16,14 @@ import sys
 import sys
 sys.path.append('../../server/')
 
-from server import learn
+from server import learn, analyze
 
 app = Flask(__name__, static_url_path='')
 
 CORS(app) 
 api = Api(app)
+
+UPLOAD_FOLDER = './files'
 
 socketIO = SocketIO(app, cors_allowed_origins=[], engineio_logger=True, logger=True, async_mode='eventlet')
 #socketIO = SocketIO(app, cors_allowed_origins=[],async_mode='eventlet')
@@ -48,12 +51,6 @@ def serve():
     print("listvm")
     return json_data
 
-@app.route("/analyze")
-def analyze():
-    name = request.form['name']
-    time = request.form['time']
-    learn(name, time)
-
 @app.route("/")
 def serve2():
     return "Tralala"
@@ -72,6 +69,54 @@ def start(vm, time):
     thread = threading.Thread(target=run_command, args=(command, ))
     thread.start()
     os.chdir('web/server/')
+
+@socketIO.on("startLearn")
+def startLearn(vm, time):
+    thread = threading.Thread(target=learn, args=(vm, time, ))
+    thread.start()
+
+@socketIO.on("startAnalyze")
+def startAnalyze(name, vm):
+    thread = threading.Thread(target=analyze, args=(name, vm, ))
+    thread.start()
+    @copy_current_request_context
+    def check_thread_status(thread):
+        while(True):
+            if not thread.is_alive():
+                emit("anomaly")
+    thread_check = threading.Thread(target=check_thread_status, args=(thread, ))
+    thread_check.start()
+
+@socketIO.on("startSandbox")
+def startSandbox(vm, time, syscalls):
+    syscalls = json.loads(syscalls, object_hook=lambda d: SimpleNamespace(**d))
+    syscall_list = syscalls.syscalls
+    f = open("../../data/syscalls.txt", "w")
+    for sys in syscall_list:
+        f.write(str(sys) + "\n")
+    os.chdir('../../')
+    command = "sudo ./vmi -m sandbox -v " + vm + " -t " + time
+    thread = threading.Thread(target=run_command, args=(command, ))
+    thread.start()
+    os.chdir('web/server/')
+
+@app.route('/uploadfile', methods=['POST'])
+def fileUpload():
+    target = UPLOAD_FOLDER
+
+    if not os.path.isdir(target):
+        os.mkdir(target)
+
+    file = request.files['file'] 
+    filename = file.filename
+    vm = request.form["vmName"]
+    destination= "/".join([target, filename])
+    file.save(destination)
+    hostname = "adina@" + vm + ":~"
+    filepath = target + "/" + filename
+    subprocess.run(['scp', filepath, hostname], stdout=subprocess.PIPE)
+    return "Success"
+                
 
 @socketIO.on("startvm")
 def startvm(vmname):
@@ -206,6 +251,8 @@ def process_syscall(list):
     except IndexError as e:
         None
 
+    if data["name"] == "execve":
+        print(data)
     return data
 
 def educational_client(connection):
