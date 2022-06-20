@@ -1,0 +1,8 @@
+Table thead{
+    position: sticky;
+    top: 0px;
+}
+
+.customClass {
+    height: 2rem;
+}

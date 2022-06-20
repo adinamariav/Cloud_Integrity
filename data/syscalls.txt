@@ -1,4 +1,1 @@
-write
-openat
 execve
-socket

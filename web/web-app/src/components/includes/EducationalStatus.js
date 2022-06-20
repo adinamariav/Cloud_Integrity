@@ -19,7 +19,9 @@ class EducationalStatus extends Component {
         const startDate = new Date();
         const endDate = this.context.endDate;
         const time = this.context.educationalTime;
-        const raisePercentage = Math.round(100 / (time * 60))
+        const raisePercentage = 100 / (time * 60)
+        console.log(time)
+        console.log(raisePercentage)
         
         const timeRemaining = endDate.getTime() - startDate.getTime();
     

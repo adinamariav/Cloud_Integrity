@@ -108,7 +108,6 @@ void process_syscall(vmi_instance_t vmi, vmi_event_t* event) {
     char* pid_str = (char*)malloc (10 * sizeof(char));
 
     char** args = (char**)malloc(8 * sizeof (char*));
-    char* syscall_name = (char*)malloc(50 * sizeof (char*));
 
     for (int i = 0; i < 8; i++) {
         args[i] = NULL;
@@ -121,14 +120,14 @@ void process_syscall(vmi_instance_t vmi, vmi_event_t* event) {
         
 
         if (running_mode == LEARN_MODE)
-            fprintf(fp, "%d, %d, , ", pid, _index);
+            fprintf(fp, "%d,%d,,", pid, _index);
     } else {
         sprintf(pid_str, "%d", pid);
         args[0] = pid_str;
         args[1] = strdup(sys_index[_index]);
 
         if (running_mode == LEARN_MODE)
-            fprintf(fp, "%d, %d, %s, ", pid, _index, sys_index[_index]);
+            fprintf(fp, "%d,%d,%s,", pid, _index, sys_index[_index]);
         
         if (running_mode == ANALYSIS_MODE) {
             append_syscall(buffer, sys_index[_index], &cs, &syscall_index, window_size);
@@ -147,13 +146,13 @@ void process_syscall(vmi_instance_t vmi, vmi_event_t* event) {
     for (int i = 0; i < 8; i++) {
         if (args[i] != NULL) {
             make_readable(args[i]);
-      //      printf("%s ", args[i]);
+         //   printf("%s ", args[i]);
             free(args[i]);
         }
     }
 
     free(args);
-  //  printf("\n");
+  // printf("\n");
 
     if (running_mode == LEARN_MODE)
         fclose(fp);
@@ -405,7 +404,8 @@ int introspect_syscall_trace (char *name, int set_mode, int window_size, int set
     float f_set_time = set_time * 60;
     time(&start_time);
 
-#ifndef MEM_EVENT
+#ifndef MEM_EVENT // write(cs, "finished", strlen("finished"));
+        // close(cs);
     if ( VMI_SUCCESS == set_lstar_breakpoint(vmi) ) {
 #else
     if ( VMI_SUCCESS == register_mem_events(vmi) ) {
@@ -451,10 +451,10 @@ error_exit:
 
     vmi_destroy(vmi);
 
-  //  if (running_mode == ANALYSIS_MODE) {
+ //if (running_mode == ANALYSIS_MODE) {
         write(cs, "finished", strlen("finished"));
         close(cs);
-  //  }
+ //}
     
 
     return 0;

@@ -1,119 +1,135 @@
 Syscall,Occur
- read,1764
- newfstatat,1716
- clock_gettime,1610
- mmap,1564
- close,1333
- openat,1075
- rt_sigaction,695
- recvmsg,499
- mprotect,479
- write,432
- poll,416
- rt_sigprocmask,398
- ioctl,377
- futex,351
- pread64,350
- epoll_wait,292
- sendmsg,249
- brk,233
- fcntl,231
- pselect6,193
- lseek,182
- stat,177
- gettid,155
- arch_prctl,130
- access,129
- ,126
- getdents64,109
- munmap,105
- wait4,103
- ppoll,96
- alarm,90
- epoll_ctl,87
- dup2,70
- execve,68
- prlimit64,65
- geteuid,63
- exit_group,61
- getuid,61
- readlinkat,57
- kill,52
- clone,52
- getpid,52
- rt_sigreturn,45
- recvfrom,42
- prctl,42
- pipe,38
- timerfd_settime,38
- umask,35
- getegid,35
- getgid,34
- statfs,31
- inotify_add_watch,31
- socket,29
- getsockopt,29
- set_robust_list,28
- sendto,27
- getppid,23
- set_tid_address,22
- statx,19
- connect,19
- mkdir,17
- rename,13
- fchmod,12
- setfsuid,12
- setfsgid,12
- getcwd,11
- rmdir,10
- setsockopt,10
- fstat,10
- setgroups,10
- getgroups,9
- readlink,9
- setxattr,9
- ftruncate,9
- gettimeofday,9
- vfork,8
- getxattr,8
- accept4,7
- uname,7
- timerfd_create,7
- waitid,6
- epoll_create1,6
- setgid,6
- getsockname,6
- fadvise64,5
- setregid,4
- unlink,4
- setpgid,4
- dup,4
- setresuid,3
- setreuid,3
- keyctl,3
- getrandom,2
- fchdir,2
- bind,2
- setresgid,2
- fstatfs,2
- getpgrp,2
- pipe2,2
- capget,2
- sysinfo,2
- chdir,2
- clock_nanosleep,1
- fchown,1
- setuid,1
- unlinkat,1
- inotify_rm_watch,1
- capset,1
- sigaltstack,1
- mremap,1
- mknodat,1
- chown,1
- nanosleep,1
- setpriority,1
- symlink,1
- removexattr,1
- getsid,1
- getpriority,1
+clock_gettime,6289.0
+getrandom,4229.0
+read,2337.0
+newfstatat,2140.0
+pselect6,1932.0
+mmap,1775.0
+rt_sigprocmask,1611.0
+poll,1492.0
+futex,1416.0
+close,1279.0
+openat,1136.0
+ioctl,1072.0
+recvmsg,1045.0
+write,908.0
+epoll_wait,816.0
+rt_sigaction,745.0
+wait4,609.0
+gettid,588.0
+times,584.0
+mprotect,562.0
+sendmsg,497.0
+gettimeofday,454.0
+inotify_add_watch,303.0
+epoll_ctl,256.0
+prlimit64,228.0
+fcntl,198.0
+prctl,169.0
+getdents64,137.0
+socket,133.0
+clone,129.0
+setsockopt,128.0
+nanosleep,128.0
+set_robust_list,126.0
+timerfd_settime,123.0
+recvfrom,110.0
+munmap,109.0
+pread64,107.0
+readlinkat,100.0
+kcmp,96.0
+lseek,96.0
+connect,93.0
+sendto,88.0
+geteuid,87.0
+getsockopt,83.0
+brk,82.0
+getuid,80.0
+getpid,72.0
+access,69.0
+getgid,69.0
+getegid,66.0
+arch_prctl,42.0
+getsockname,42.0
+readlink,30.0
+kill,28.0
+rmdir,27.0
+eventfd2,23.0
+dup2,22.0
+execve,21.0
+exit_group,21.0
+rt_sigreturn,20.0
+pipe,19.0
+ftruncate,18.0
+madvise,17.0
+exit,17.0
+umask,16.0
+epoll_pwait,16.0
+accept4,16.0
+stat,15.0
+mkdir,15.0
+setresuid,15.0
+fsync,15.0
+statx,14.0
+uname,14.0
+capget,14.0
+pipe2,13.0
+socketpair,13.0
+ppoll,13.0
+bind,12.0
+chdir,12.0
+statfs,12.0
+writev,11.0
+dup3,11.0
+getppid,11.0
+setpgid,11.0
+sched_setattr,10.0
+fstat,10.0
+setresgid,10.0
+clock_nanosleep,10.0
+shutdown,10.0
+rename,10.0
+timerfd_create,10.0
+getpeername,9.0
+set_tid_address,9.0
+waitid,9.0
+sched_yield,9.0
+epoll_create1,9.0
+setgroups,9.0
+getcwd,8.0
+fstatfs,7.0
+alarm,7.0
+unlink,7.0
+keyctl,6.0
+setgid,5.0
+setuid,4.0
+sendmmsg,4.0
+capset,4.0
+setsid,4.0
+getgroups,4.0
+mremap,4.0
+inotify_rm_watch,3.0
+umount2,3.0
+sched_getattr,3.0
+removexattr,3.0
+getpgrp,3.0
+setxattr,3.0
+fallocate,3.0
+sysinfo,3.0
+symlink,3.0
+add_key,3.0
+sigaltstack,2.0
+getresgid,2.0
+dup,2.0
+getresuid,2.0
+getpgid,1.0
+chmod,1.0
+lstat,1.0
+pwrite64,1.0
+getpriority,1.0
+getsid,1.0
+vfork,1.0
+listen,1.0
+setpriority,1.0
+rt_sigpending,1.0
+,

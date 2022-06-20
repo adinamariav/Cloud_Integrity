@@ -37,10 +37,11 @@ class BoSC_Creator(object):
                 temp += 1
                 bag[-1] = temp
 
+        print(str(bag))
+
         return str(bag)
 
     def append_BoSC(self, syscall):
-        print(len(self.sliding_window))
         if len(self.sliding_window) == self.WINDOW_SIZE:
             bag = self.create_BoSC()
             self.sliding_window = self.sliding_window[1:]

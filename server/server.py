@@ -21,6 +21,8 @@ def learn(name, time):
 
 def analysis_client(connection):
     global anomalyCount
+    global bosc
+    bosc.load_lookup_table()
     run = True
     while run == True:
         bytes_recd = 0
@@ -42,9 +44,7 @@ def analysis_client(connection):
         for syscall in syscalls:
             if bosc.append_BoSC(syscall) == 'Anomaly':
                 anomalyCount = anomalyCount + 1
-                print("Anomalies ", anomalyCount)
-                if (anomalyCount > 10):
-                    run = False
+        print("Anomalies ", anomalyCount)
     connection.close()
 
 def analyze(name, time):
@@ -78,24 +78,24 @@ if len(sys.argv) > 1:
         bosc.create_learning_db()
   
     elif (sys.argv[1] == "--analyze"):
-        ServerSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        host = '127.0.0.1'
-        port = 1233
-        ThreadCount = 0
-        try:
-            ServerSocket.bind((host, port))
-        except socket.error as e:
-            print(str(e))
-        print('Waiting for a connection..')
-        ServerSocket.listen(5)
-        while True:
+            os.chdir('../')
+            command = "sudo ./vmi -m analyze -v " + sys.argv[2] + " -t " + sys.argv[3]
+            subprocess.Popen(command, shell=True)
+            os.chdir("server/")
+
+            ServerSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            host = '127.0.0.1'
+            port = 1233
+            try:
+                ServerSocket.bind((host, port))
+            except socket.error as e:
+                print(str(e))
+            print('Waiting for a connection (analysis server)')
+            ServerSocket.listen(5)
             Client, address = ServerSocket.accept()
             print('Connected to: ' + address[0] + ':' + str(address[1]))
-            if sys.argv[1] == "--analyze":
-                start_new_thread(analysis_client, (Client, ))
-            ThreadCount += 1
-            print('Thread Number: ' + str(ThreadCount))
-        ServerSocket.close()
+            analysis_client(Client)
+            ServerSocket.close()
     else:
         print("Syntax: server.py --learn [name] [time/s]")   
 else:

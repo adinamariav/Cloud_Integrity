@@ -20,10 +20,14 @@ class DB_Connector(object):
             print(str(e)," during database validation")
 
     def check_existence(self, data):
-        query = "SELECT * FROM BoSC WHERE BAGS = ?"
+        query = "SELECT * FROM BoSC WHERE BAGS=?"
         try:
             self.DB_CURSOR.execute(query,(data,))
+            db_results = self.DB_CURSOR.fetchall()
         except Exception as e:
+            db_results == []
+        
+        if db_results == []:
             return False
         
         return True

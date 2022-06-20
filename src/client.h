@@ -2,12 +2,12 @@
 #define SEPARATOR ","
 #define END "."
 
-#define RDI_ regs[0]
-#define RSI_ regs[1]
-#define RDX_ regs[2]
-#define R10_ regs[3]
-#define R8_  regs[4]
-#define R9_  regs[5]
+#define RDI_IDX 0
+#define RSI_IDX 1
+#define RDX_IDX 2
+#define R10_IDX 3
+#define R8_IDX  4
+#define R9_IDX  5
 
 #define ANALYSIS_SERVER_PORT 1233
 #define FLASK_SERVER_PORT 1234
@@ -76,6 +76,7 @@ void connect_server(int* cs, int port) {
 	}
 
     freeaddrinfo(res);
+    freeaddrinfo(tmp);
 }
 
 void append_syscall(char* buffer, char* syscall, int* socket, int* frame_index, int window_size) {
@@ -94,7 +95,7 @@ void append_syscall(char* buffer, char* syscall, int* socket, int* frame_index, 
 
 void create_csv_file() {
     FILE *fp = fopen("syscall-trace.csv", "w");
-    fprintf(fp, "PID, SyscallID, Syscall, RDI, RSI, RDX, R10, R8, R9\n");
+    fprintf(fp, "PID,SyscallID,Syscall,RDI,RSI,RDX,R10,R8,R9\n");
     fclose(fp);
 }
 #pragma region syscall_handlers
@@ -146,7 +147,7 @@ void get_mprotect_flags(int flags, char** args) {
 
 void get_open_args(vmi_instance_t vmi, int pid, reg_t *regs, FILE* fp, char** args) {
     char *filename = NULL;
-    filename = vmi_read_str_va(vmi, RDI_, pid);
+    filename = vmi_read_str_va(vmi, regs[RDI_IDX], pid);
 
     if (filename) {
         args[2] = strdup(filename);
@@ -156,14 +157,14 @@ void get_open_args(vmi_instance_t vmi, int pid, reg_t *regs, FILE* fp, char** ar
     }
 
     args[3] = (char*)malloc(30 * sizeof (char));
-    sprintf(args[3], "mode: %u", (unsigned int)RSI_);
+    sprintf(args[3], "mode: %u", (unsigned int)regs[RSI_IDX]);
 
-    get_open_flags((unsigned int)RDX_, args, 4);
+    get_open_flags((unsigned int)regs[RDX_IDX], args, 4);
 }
 
 void get_execve_args(vmi_instance_t vmi, int pid, reg_t *regs, FILE* fp, char** args) {
     char *filename = NULL;
-    filename = vmi_read_str_va(vmi, RDI_, pid);
+    filename = vmi_read_str_va(vmi, regs[RDI_IDX], pid);
 
     if (filename) {
         args[2] = strdup(filename);
@@ -176,10 +177,10 @@ void get_execve_args(vmi_instance_t vmi, int pid, reg_t *regs, FILE* fp, char** 
 
 void get_openat_args(vmi_instance_t vmi, int pid, reg_t *regs, FILE* fp, char** args) {
     char *filename = NULL;
-    filename = vmi_read_str_va(vmi, RSI_, pid);
+    filename = vmi_read_str_va(vmi, regs[RSI_IDX], pid);
 
     args[2] = (char*)malloc(30 * sizeof (char));
-    sprintf(args[2], "DFD: %u", (unsigned int)RDI_);
+    sprintf(args[2], "DFD: %u", (unsigned int)regs[RDI_IDX]);
 
     if (filename) {
         args[3] = strdup(filename);
@@ -189,17 +190,17 @@ void get_openat_args(vmi_instance_t vmi, int pid, reg_t *regs, FILE* fp, char** 
     }
 
     args[4] = (char*)malloc(30 * sizeof (char));
-    sprintf(args[4], "mode: %u", (unsigned int)RDX_);
+    sprintf(args[4], "mode: %u", (unsigned int)regs[RDX_IDX]);
 
-    get_open_flags((unsigned int)R10_, args, 5);
+    get_open_flags((unsigned int)regs[R10_IDX], args, 5);
 }
 
 void get_write_args(vmi_instance_t vmi, int pid, reg_t *regs, FILE* fp, char** args) {
     char *buffer = NULL;
-    buffer = vmi_read_str_va(vmi, RSI_, pid);
+    buffer = vmi_read_str_va(vmi, regs[RSI_IDX], pid);
 
     args[2] = (char*)malloc(30 * sizeof (char));
-    sprintf(args[2], "fd: %u", (unsigned int)RDI_);
+    sprintf(args[2], "fd: %u", (unsigned int)regs[RDI_IDX]);
 
     if (buffer) {
         args[3] = strdup(buffer);
@@ -209,17 +210,17 @@ void get_write_args(vmi_instance_t vmi, int pid, reg_t *regs, FILE* fp, char** a
     }
 
     args[4] = (char*)malloc(30 * sizeof (char));
-    sprintf(args[4], "count:  %u", (unsigned int)RDX_);
+    sprintf(args[4], "count:  %u", (unsigned int)regs[RDX_IDX]);
 }
 
 void get_mprotect_args(vmi_instance_t vmi, int pid, reg_t *regs, FILE* fp, char** args) {
     args[2] = (char*)malloc(30 * sizeof (char));
-    sprintf(args[2], "start addr: 0x%lx", (unsigned long)RDI_);
+    sprintf(args[2], "start addr: 0x%lx", (unsigned long)regs[RDI_IDX]);
 
     args[3] = (char*)malloc(30 * sizeof (char));
-    sprintf(args[3], "len: %u", (unsigned int)RSI_);
+    sprintf(args[3], "len: %u", (unsigned int)regs[RSI_IDX]);
 
-    get_mprotect_flags((unsigned int)RDX_, args);
+    get_mprotect_flags((unsigned int)regs[RDX_IDX], args);
 }
 
 void get_args(vmi_instance_t vmi, vmi_event_t *event, int pid, int syscall_id, FILE* fp, int mode, char** args) {
@@ -227,12 +228,12 @@ void get_args(vmi_instance_t vmi, vmi_event_t *event, int pid, int syscall_id, F
     
     reg_t regs[6];
 
-    vmi_get_vcpureg(vmi, &RDI_, RDI, event->vcpu_id);
-    vmi_get_vcpureg(vmi, &RSI_, RSI, event->vcpu_id);
-    vmi_get_vcpureg(vmi, &RDX_, RDX, event->vcpu_id);
-    vmi_get_vcpureg(vmi, &R10_, R10, event->vcpu_id);
-    vmi_get_vcpureg(vmi, &R8_, R8, event->vcpu_id);
-    vmi_get_vcpureg(vmi, &R9_, R9, event->vcpu_id);
+    vmi_get_vcpureg(vmi, &regs[RDI_IDX], RDI, event->vcpu_id);
+    vmi_get_vcpureg(vmi, &regs[RSI_IDX], RSI, event->vcpu_id);
+    vmi_get_vcpureg(vmi, &regs[RDX_IDX], RDX, event->vcpu_id);
+    vmi_get_vcpureg(vmi, &regs[R10_IDX], R10, event->vcpu_id);
+    vmi_get_vcpureg(vmi, &regs[R8_IDX], R8, event->vcpu_id);
+    vmi_get_vcpureg(vmi, &regs[R9_IDX], R9, event->vcpu_id);
 
     switch (syscall_id) {
         case 1:
@@ -253,16 +254,15 @@ void get_args(vmi_instance_t vmi, vmi_event_t *event, int pid, int syscall_id, F
         
         default:
             for (int i = 0; i < args_number; i++) {
-                char* output = (char*)malloc(50 * sizeof(char));
+                args[i + 2] = (char*)malloc(50 * sizeof(char));
 
-                sprintf(output, "%u", (unsigned int)regs[i]);
-                args[i + 2] = output;
+                sprintf(args[i + 2], "%u", (unsigned int)regs[i]);
             }
             break;
     }
 
     if (mode == LEARN_MODE)
-        fprintf(fp, "%u, %u, %u, %u, %u, %u\n", (unsigned int)RDI_, (unsigned int)RSI_, (unsigned int)RDX_, (unsigned int)R10_, (unsigned int)R8_, (unsigned int)R9_);
+        fprintf(fp, "%u,%u,%u,%u,%u,%u\n", (unsigned int)regs[RDI_IDX], (unsigned int)regs[RSI_IDX], (unsigned int)regs[RDX_IDX], (unsigned int)regs[R10_IDX], (unsigned int)regs[R8_IDX], (unsigned int)regs[R9_IDX]);
 }
 #pragma endregion
 
@@ -279,7 +279,6 @@ bool make_readable(char* str) {
 
 void send_syscall_verbose(char** syscall, int* socket) {
     int total_size = 0;
-    int bytes_sent = MAX_BUFSIZE;
 
     for (int i = 0; i < 8; i++) {
         if (syscall[i] != NULL) {

@@ -9,6 +9,9 @@ import threading
 import os
 import json
 import socket
+import csv
+import datetime
+import pandas
 
 from xenutils import get_active_VMs, start_educational
 import sys
@@ -24,6 +27,7 @@ CORS(app)
 api = Api(app)
 
 UPLOAD_FOLDER = './files'
+fname = ""
 
 socketIO = SocketIO(app, cors_allowed_origins=[], engineio_logger=True, logger=True, async_mode='eventlet')
 #socketIO = SocketIO(app, cors_allowed_origins=[],async_mode='eventlet')
@@ -60,15 +64,89 @@ def connect():
     print("connected!")
 
 def run_command(command):
-    p = subprocess.Popen(command, stdout = subprocess.PIPE, stderr = subprocess.STDOUT, shell = True)
+    p = subprocess.Popen(command, shell = True)
 
 @socketIO.on("startEducational")
-def start(vm, time):
+def start(vm, set_time):
+    date = datetime.datetime.now()
+    fname = "files/sessions/educational/" + str(date.day) + "-" + str(date.month) + "-" + str(date.year) + "-" + str(date.hour) + "-" + str(date.minute) + ".csv"
+    @copy_current_request_context
+    def thread_serve(port, filename):
+        ServerSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        host = '127.0.0.1'
+        try:
+            ServerSocket.bind((host, port))
+        except socket.error as e:
+            print(str(e))
+        print('Waiting for a connection..')
+        ServerSocket.listen(5)
+        Client, address = ServerSocket.accept()
+        print('Connected to: ' + address[0] + ':' + str(address[1]))
+        educational_client(Client, filename)
+        ServerSocket.close()
+
+    thread = threading.Thread(target=thread_serve, args=(1234, fname, ))
+    thread.start()
+
+    @copy_current_request_context
+    def send_events(filename):
+        print(filename)
+        time.sleep(2)
+        prev_df = pandas.read_csv(filename)
+        while True:
+            df = pandas.read_csv(filename)
+            len_prev = len(prev_df.index)
+            len_curr = len(df.index)
+            diff_df = df.iloc[len_prev:len_curr]
+            diff_df.fillna('null', inplace=True)
+            data = diff_df.to_dict('records')
+            for item in data[:]:
+                if item["name"] == "clock_gettime":
+                    data.pop(data.index(item))
+                if item["name"] == "pselect6":
+                    data.pop(data.index(item))
+                if item["name"] == "inotify_add_watch":
+                    data.pop(data.index(item))
+
+                item["details"] = ""
+                
+                if len(str(item["rsi"])) > 10:
+                    item["details"] += item["rsi"]
+                    item["rsi"] = item["rsi"][:10]
+                    item["rsi"] = item["rsi"] + "..."
+
+                if len(str(item["rdi"])) > 10:
+                    item["details"] += item["rdi"]
+                    item["rdi"] = item["rdi"][:10]
+                    item["rdi"] = item["rdi"] + "..."
+
+                if len(str(item["rdx"])) > 10:
+                    item["rdx"] = item["rdx"][:10]
+
+                if len(str(item["r10"])) > 10:
+                    item["r10"] = item["r10"][:10]
+
+                if len(str(item["r8"])) > 10:
+                    item["r8"] = item["r8"][:10]
+
+                if len(str(item["r9"])) > 10:
+                    item["r9"] = item["r9"][:10]
+                
+            if data != []:
+                len_data = len(data)
+                for i in range(0, len_data, 200):
+                    json_data = json.dumps(data[i : i + 200])
+                    emit("syscall", { 'data' : json_data }, broadcast=True)
+            prev_df = df
+            time.sleep(2)
+
     os.chdir('../../')
-    command = "sudo ./vmi -m educational -v " + vm + " -t " + time
+    command = "sudo ./vmi -m educational -v " + vm + " -t " + set_time
     thread = threading.Thread(target=run_command, args=(command, ))
     thread.start()
     os.chdir('web/server/')
+    thread_send = threading.Thread(target=send_events, args=(fname, ))
+    thread_send.start()
 
 @socketIO.on("startLearn")
 def startLearn(vm, time):
@@ -121,23 +199,6 @@ def fileUpload():
 @socketIO.on("startvm")
 def startvm(vmname):
     print("startvm")
-    @copy_current_request_context
-    def thread_serve(port):
-        ServerSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        host = '127.0.0.1'
-        try:
-            ServerSocket.bind((host, port))
-        except socket.error as e:
-            print(str(e))
-        print('Waiting for a connection..')
-        ServerSocket.listen(5)
-        Client, address = ServerSocket.accept()
-        print('Connected to: ' + address[0] + ':' + str(address[1]))
-        educational_client(Client)
-        ServerSocket.close()
-
-    thread = threading.Thread(target=thread_serve, args=(1234, ))
-    thread.start()
 
     @copy_current_request_context
     def get_mem_cpu_load(vm):
@@ -158,69 +219,24 @@ def startvm(vmname):
     @copy_current_request_context
     def get_net_status(p, vmname):
         while True:
-            lines = ""
-            while True:
-                line = p.stdout.readline().decode("utf-8")
-                if line[0] == "=":
-                    break
-                if "Host" in line:
-                    continue
-                if "---" in line:
-                    continue
-                if "Total" in line:
-                    continue
-                if "Peak" in line:
-                    continue
-                if "Cumulative" in line:
-                    continue
-                if "address" in line:
-                    continue
-                if "interface" in line:
-                    continue
-                if "Listening" in line:
-                    continue
-                lines += line
-            lines = lines.split()
-            pos = 1
-            while pos < len(lines):
-                send_data = {}
-                recv_data = {}
-                if (lines[pos].isnumeric()):
-                    pos = pos + 1
-                send_data["host"] = lines[pos]
-                pos = pos+1
-                send_data["dir"] = lines[pos]
-                pos = pos+1
-                send_data["last2"] = lines[pos]
-                pos = pos+1
-                send_data["last10"] = lines[pos]
-                pos = pos+1
-                send_data["last40"] = lines[pos]
-                pos = pos+1
-                send_data["cumul"] = lines[pos]
-                pos = pos+1
-                json_send_data = json.dumps(send_data)
-                if (lines[pos].isnumeric()):
-                    pos = pos + 1
-                recv_data["host"] = lines[pos]
-                pos = pos+1
-                recv_data["dir"] = lines[pos]
-                pos = pos+1
-                recv_data["last2"] = lines[pos]
-                pos = pos+1
-                recv_data["last10"] = lines[pos]
-                pos = pos+1
-                recv_data["last40"] = lines[pos]
-                pos = pos+1
-                recv_data["cumul"] = lines[pos]
-                pos = pos+1
-                json_recv_data = json.dumps(recv_data)
-                if (send_data["host"] == vmname or recv_data["host"] == vmname):
-                    emit("net", { 'data' : json_send_data }, broadcast=True)
-                    emit("net", { 'data' : json_recv_data }, broadcast=True)
-            if not line: break    
+            line = p.stdout.readline().decode("utf-8")
+            if vmname not in line:
+                continue
+            if "ARP" in line:
+                continue
+            split = line.split()
+            send_data = {}
+            send_data["time"] = split[0]
+            send_data["from"] = split[2]
+            send_data["to"] = split[4][:-1]
+            send_data["len"] = split[-1]
+            send_data["details"] = " ".join(split[1:])
+            if send_data["len"][-1] == ")":
+                send_data["len"] = send_data["len"]
+            emit("net", { 'data' : json.dumps(send_data)})
+            if not line: break
 
-    command = "sudo iftop -t -i virbr"
+    command = "sudo tcpdump -i virbr --immediate-mode"
     p = subprocess.Popen(command, stdout = subprocess.PIPE, stderr = subprocess.STDOUT, shell = True)
     thread = threading.Thread(target=get_net_status, args=(p, vmname, ))
     thread.start()
@@ -251,15 +267,18 @@ def process_syscall(list):
     except IndexError as e:
         None
 
-    if data["name"] == "execve":
-        print(data)
     return data
 
-def educational_client(connection):
+def educational_client(connection, fname):
     try:
         start = "**"
         end = 0
         buffer = []
+        csv_columns = ['id', 'pid','name','rdi','rsi','rdx','r10','r8','r9']
+        csv_file = open(fname, "w")
+        csv_writer = csv.DictWriter(csv_file, delimiter=",", fieldnames=csv_columns)
+        csv_writer.writeheader()
+        id = 0
         while end == 0:
             bytes_recd = 0
             chunk = start
@@ -277,11 +296,15 @@ def educational_client(connection):
                         end = 1
                 if piece == 'end':
                     data = process_syscall(syscall)
+                    data["id"] = id
+                    id = id + 1
                     buffer.append(data)
-                    if len(buffer) == 5:
-                        json_data = json.dumps(buffer)
-                        emit("syscall", { 'data' : json_data }, broadcast=True)
-                        buffer = []
+                    # if len(buffer) == 5:
+                    #     json_data = json.dumps(buffer)
+                    #     emit("syscall", { 'data' : json_data }, broadcast=True)
+                    #     buffer = []
+                    csv_writer.writerow(data)
+                    csv_file.flush()
                     syscall = []
                 else:
                     syscall.append(piece)
