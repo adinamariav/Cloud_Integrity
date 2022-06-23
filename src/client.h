@@ -9,7 +9,7 @@
 #define R8_IDX  4
 #define R9_IDX  5
 
-#define ANALYSIS_SERVER_PORT 1233
+#define ANALYSIS_SERVER_PORT 1201
 #define FLASK_SERVER_PORT 1234
 
 #include <sys/types.h>
@@ -55,6 +55,9 @@ void connect_server(int* cs, int port) {
 		perror("client: socket");
 		_exit(1);
 	}
+
+    if (setsockopt(*cs, SOL_SOCKET, SO_REUSEADDR, &(int){1}, sizeof(int)) < 0)
+        perror("setsockopt(SO_REUSEADDR) failed");
 
     sockcl.sin_family=AF_INET;
 	sockcl.sin_addr.s_addr=inet_addr(host);

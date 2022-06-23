@@ -1,5 +1,6 @@
 import React from "react";
 import { Link } from 'react-router-dom'
+import Sessions from "../pages/EducationalSessions";
 
 function Navbar() {
     return(
@@ -22,7 +23,7 @@ function Navbar() {
                             More options
                         </a>
                         <ul class="dropdown-menu" aria-labelledby="navbarDropdown">
-                            {/* <li><Link class="dropdown-item" to="/syscalls">View system calls</Link></li> */}
+                            <li><Link class="dropdown-item" to="/sessions">View previous sessions</Link></li>
                         </ul>    
                     </li>
                 </ul>

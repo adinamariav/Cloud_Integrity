@@ -95,7 +95,7 @@ class SyscallTable extends Component {
     render() {
 
         const more_rows = css({
-            height: `32rem`
+            height: `28rem`
         });
         
         const no_rows = css({

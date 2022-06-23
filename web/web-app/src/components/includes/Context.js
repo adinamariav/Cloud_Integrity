@@ -78,6 +78,7 @@ export class DataProvider extends Component {
     }
 
     startAnalyze = () => {
+        alert("aici")
         const { vmName } = this.state;
         const { analyzeTime } = this.state;
 
@@ -98,7 +99,7 @@ export class DataProvider extends Component {
 
         }
         catch (error) {
-
+            console.log(error)
         }
     }
 

@@ -37,6 +37,7 @@ class BoSC_Creator(object):
                 temp += 1
                 bag[-1] = temp
 
+        print(self.sliding_window)
         print(str(bag))
 
         return str(bag)

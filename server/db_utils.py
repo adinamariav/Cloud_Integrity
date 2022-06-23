@@ -1,8 +1,9 @@
 import sqlite3
 from sqlite3 import Error
+import os
 
 class DB_Connector(object):
-    def __init(self):
+    def __init__(self):
         self.DB_CURSOR     = None
         self.DB_CONNECTION = None
     try:
@@ -12,14 +13,22 @@ class DB_Connector(object):
         print(e)
 
     def validate_bosc_table(self):
+        if self.DB_CURSOR is None:
+            self.DB_CONNECTION = sqlite3.connect('../data/bosc.sqlite')
+            self.DB_CURSOR = self.DB_CONNECTION.cursor()
+        # delete_query = "DROP TABLE BoSC"
         query = "CREATE TABLE IF NOT EXISTS BoSC (BAGS TEXT PRIMARY KEY);"
         try:
+            # self.DB_CURSOR.execute(delete_query)
             self.DB_CURSOR.execute(query)
             self.DB_CONNECTION.commit()
         except Exception as e:
             print(str(e)," during database validation")
 
     def check_existence(self, data):
+        if self.DB_CURSOR is None:
+            self.DB_CONNECTION = sqlite3.connect('../../data/bosc.sqlite')
+            self.DB_CURSOR = self.DB_CONNECTION.cursor()
         query = "SELECT * FROM BoSC WHERE BAGS=?"
         try:
             self.DB_CURSOR.execute(query,(data,))

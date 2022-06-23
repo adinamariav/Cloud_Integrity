@@ -19,7 +19,7 @@ class LearnStatus extends Component {
         const startDate = new Date();
         const endDate = this.context.endDate;
         const time = this.context.learnTime;
-        const raisePercentage = Math.round(100 / (time * 60))
+        const raisePercentage = 100 / (time * 60)
         
         const timeRemaining = endDate.getTime() - startDate.getTime();
     

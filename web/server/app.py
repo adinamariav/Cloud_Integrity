@@ -3,6 +3,8 @@ from flask_restful import Api
 from flask_cors import CORS
 from flask_socketio import *
 from eventlet.green import subprocess
+from eventlet.greenio import GreenPipe, GreenSocket
+from eventlet.queue import LightQueue as Queue
 import time
 from types import SimpleNamespace
 import threading
@@ -12,6 +14,8 @@ import socket
 import csv
 import datetime
 import pandas
+pandas.options.mode.chained_assignment = None
+import eventlet
 
 from xenutils import get_active_VMs, start_educational
 import sys
@@ -19,7 +23,7 @@ import sys
 import sys
 sys.path.append('../../server/')
 
-from server import learn, analyze
+analysis_server = eventlet.import_patched('server')
 
 app = Flask(__name__, static_url_path='')
 
@@ -29,8 +33,8 @@ api = Api(app)
 UPLOAD_FOLDER = './files'
 fname = ""
 
-socketIO = SocketIO(app, cors_allowed_origins=[], engineio_logger=True, logger=True, async_mode='eventlet')
-#socketIO = SocketIO(app, cors_allowed_origins=[],async_mode='eventlet')
+#socketIO = SocketIO(app, cors_allowed_origins=[], engineio_logger=True, logger=True, async_mode='eventlet')
+socketIO = SocketIO(app, cors_allowed_origins=[],async_mode='eventlet')
 end_client = 0
 
 import eventlet
@@ -52,7 +56,6 @@ def serve():
     except Exception as e:
         print(e)
 
-    print("listvm")
     return json_data
 
 @app.route("/")
@@ -91,7 +94,7 @@ def start(vm, set_time):
     @copy_current_request_context
     def send_events(filename):
         print(filename)
-        time.sleep(2)
+        time.sleep(3)
         prev_df = pandas.read_csv(filename)
         while True:
             df = pandas.read_csv(filename)
@@ -149,34 +152,286 @@ def start(vm, set_time):
     thread_send.start()
 
 @socketIO.on("startLearn")
-def startLearn(vm, time):
-    thread = threading.Thread(target=learn, args=(vm, time, ))
+def startLearn(vm, set_time):
+    date = datetime.datetime.now()
+    fname = "files/sessions/learn/" + str(date.day) + "-" + str(date.month) + "-" + str(date.year) + "-" + str(date.hour) + "-" + str(date.minute) + ".csv"
+    @copy_current_request_context
+    def thread_serve(port, filename):
+        ServerSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        host = '127.0.0.1'
+        try:
+            ServerSocket.bind((host, port))
+        except socket.error as e:
+            print(str(e))
+        print('Waiting for a connection..')
+        ServerSocket.listen(5)
+        Client, address = ServerSocket.accept()
+        print('Connected to: ' + address[0] + ':' + str(address[1]))
+        os.chdir("web/server/")
+        educational_client(Client, filename)
+        ServerSocket.close()
+    
+    thread = threading.Thread(target=thread_serve, args=(1234, fname, ))
     thread.start()
-
-@socketIO.on("startAnalyze")
-def startAnalyze(name, vm):
-    thread = threading.Thread(target=analyze, args=(name, vm, ))
+    thread = threading.Thread(target=analysis_server.learn, args=(vm, set_time, ))
     thread.start()
     @copy_current_request_context
-    def check_thread_status(thread):
-        while(True):
-            if not thread.is_alive():
-                emit("anomaly")
-    thread_check = threading.Thread(target=check_thread_status, args=(thread, ))
-    thread_check.start()
+    def send_events(filename):
+        print(filename)
+        time.sleep(2)
+        try:
+            prev_df = pandas.read_csv(filename)
+        except Exception:
+            prev_df = pandas.DataFrame()
+        while True:
+            try:
+                df = pandas.read_csv(filename)
+            except Exception:
+                df = pandas.DataFrame()
+
+            len_prev = len(prev_df.index)
+            len_curr = len(df.index)
+            diff_df = df.iloc[len_prev:len_curr]
+            diff_df.fillna('null', inplace=True)
+            data = diff_df.to_dict('records')
+            for item in data[:]:
+                item["details"] = ""
+                    
+                if len(str(item["rsi"])) > 10:
+                    item["details"] += item["rsi"]
+                    item["rsi"] = item["rsi"][:10]
+                    item["rsi"] = item["rsi"] + "..."
+
+                if len(str(item["rdi"])) > 10:
+                    item["details"] += item["rdi"]
+                    item["rdi"] = item["rdi"][:10]
+                    item["rdi"] = item["rdi"] + "..."
+
+                if len(str(item["rdx"])) > 10:
+                    item["rdx"] = item["rdx"][:10]
+
+                if len(str(item["r10"])) > 10:
+                    item["r10"] = item["r10"][:10]
+
+                if len(str(item["r8"])) > 10:
+                    item["r8"] = item["r8"][:10]
+
+                if len(str(item["r9"])) > 10:
+                    item["r9"] = item["r9"][:10]
+                    
+            if data != []:
+                len_data = len(data)
+                if len_data > 200:
+                    for i in range(0, len_data, 200):
+                        json_data = json.dumps(data[i : i + 200])
+                        emit("syscall", { 'data' : json_data }, broadcast=True)
+                else:
+                    json_data = json.dumps(data)
+                    emit("syscall", { 'data' : json_data }, broadcast=True)
+            prev_df = df
+            time.sleep(2)
+    thread_send = threading.Thread(target=send_events, args=(fname, ))
+    thread_send.start()
+
+def green_pipe():
+    s1, s2 = socket.socketpair()
+    s1.setblocking(True)
+    s2.setblocking(True)
+    s2 = GreenSocket(s2)
+    return s1, s2
+
+@socketIO.on("startAnalyze")
+def startAnalyze(name, set_time):
+    date = datetime.datetime.now()
+    fname = "files/sessions/learn/" + str(date.day) + "-" + str(date.month) + "-" + str(date.year) + "-" + str(date.hour) + "-" + str(date.minute) + ".csv"
+    @copy_current_request_context
+    def thread_serve(port, filename):
+        ServerSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        host = '127.0.0.1'
+        try:
+            ServerSocket.bind((host, port))
+        except socket.error as e:
+            print(str(e))
+        print('Waiting for a connection.. (flask server)')
+        ServerSocket.listen(5)
+        Client, address = ServerSocket.accept()
+        print('Flask connected to: ' + address[0] + ':' + str(address[1]))
+        os.chdir("../web/server")
+        educational_client(Client, filename)
+        ServerSocket.close()
+    
+    thread = threading.Thread(target=thread_serve, args=(1234, fname, ))
+    thread.start()
+    conn_queue = Queue()
+
+    thread = threading.Thread(target=analysis_server.analyze, args=(name, set_time, conn_queue))
+    thread.start()
+    print(os.getcwd())
+
+    @copy_current_request_context
+    def check_queue(conn_queue):
+        eventlet.sleep(3)
+        while True:
+            eventlet.sleep(0.5)
+            msg = ""
+            try:
+                msg = conn_queue.get_nowait()
+            except Exception:
+                None
+            if msg != "":
+                print("ANOMALIES ", msg)
+
+    thread = threading.Thread(target=check_queue, args=(conn_queue, ))
+    thread.start()
+
+    @copy_current_request_context
+    def send_events(filename):
+        print(filename)
+        time.sleep(2)
+        try:
+            prev_df = pandas.read_csv(filename)
+        except Exception:
+            prev_df = pandas.DataFrame()
+        while True:
+            try:
+                df = pandas.read_csv(filename)
+            except Exception:
+                df = pandas.DataFrame()
+
+            len_prev = len(prev_df.index)
+            len_curr = len(df.index)
+            diff_df = df.iloc[len_prev:len_curr]
+            diff_df.fillna('null', inplace=True)
+            data = diff_df.to_dict('records')
+            for item in data[:]:
+                item["details"] = ""
+                    
+                if len(str(item["rsi"])) > 10:
+                    item["details"] += item["rsi"]
+                    item["rsi"] = item["rsi"][:10]
+                    item["rsi"] = item["rsi"] + "..."
+
+                if len(str(item["rdi"])) > 10:
+                    item["details"] += item["rdi"]
+                    item["rdi"] = item["rdi"][:10]
+                    item["rdi"] = item["rdi"] + "..."
+
+                if len(str(item["rdx"])) > 10:
+                    item["rdx"] = item["rdx"][:10]
+
+                if len(str(item["r10"])) > 10:
+                    item["r10"] = item["r10"][:10]
+
+                if len(str(item["r8"])) > 10:
+                    item["r8"] = item["r8"][:10]
+
+                if len(str(item["r9"])) > 10:
+                    item["r9"] = item["r9"][:10]
+                    
+            if data != []:
+                len_data = len(data)
+                if len_data > 200:
+                    for i in range(0, len_data, 200):
+                        json_data = json.dumps(data[i : i + 200])
+                        emit("syscall", { 'data' : json_data }, broadcast=True)
+                else:
+                    json_data = json.dumps(data)
+                    emit("syscall", { 'data' : json_data }, broadcast=True)
+            prev_df = df
+            time.sleep(2)
+    thread_send = threading.Thread(target=send_events, args=(fname, ))
+    thread_send.start()
+    
 
 @socketIO.on("startSandbox")
-def startSandbox(vm, time, syscalls):
+def startSandbox(vm, set_time, syscalls):
+    date = datetime.datetime.now()
+    fname = "files/sessions/sandbox/" + str(date.day) + "-" + str(date.month) + "-" + str(date.year) + "-" + str(date.hour) + "-" + str(date.minute) + ".csv"
+    @copy_current_request_context
+    def thread_serve(port, filename):
+        ServerSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        host = '127.0.0.1'
+        try:
+            ServerSocket.bind((host, port))
+        except socket.error as e:
+            print(str(e))
+        print('Waiting for a connection..')
+        ServerSocket.listen(5)
+        Client, address = ServerSocket.accept()
+        print('Connected to: ' + address[0] + ':' + str(address[1]))
+        educational_client(Client, filename)
+        ServerSocket.close()
+    
+    thread = threading.Thread(target=thread_serve, args=(1234, fname, ))
+    thread.start()
+
+    @copy_current_request_context
+    def send_events(filename):
+        print(filename)
+        time.sleep(2)
+        try:
+            prev_df = pandas.read_csv(filename)
+        except Exception:
+            prev_df = pandas.DataFrame()
+        while True:
+            try:
+                df = pandas.read_csv(filename)
+            except Exception:
+                df = pandas.DataFrame()
+
+            len_prev = len(prev_df.index)
+            len_curr = len(df.index)
+            diff_df = df.iloc[len_prev:len_curr]
+            diff_df.fillna('null', inplace=True)
+            data = diff_df.to_dict('records')
+            for item in data[:]:
+                item["details"] = ""
+                    
+                if len(str(item["rsi"])) > 10:
+                    item["details"] += item["rsi"]
+                    item["rsi"] = item["rsi"][:10]
+                    item["rsi"] = item["rsi"] + "..."
+
+                if len(str(item["rdi"])) > 10:
+                    item["details"] += item["rdi"]
+                    item["rdi"] = item["rdi"][:10]
+                    item["rdi"] = item["rdi"] + "..."
+
+                if len(str(item["rdx"])) > 10:
+                    item["rdx"] = item["rdx"][:10]
+
+                if len(str(item["r10"])) > 10:
+                    item["r10"] = item["r10"][:10]
+
+                if len(str(item["r8"])) > 10:
+                    item["r8"] = item["r8"][:10]
+
+                if len(str(item["r9"])) > 10:
+                    item["r9"] = item["r9"][:10]
+                    
+            if data != []:
+                len_data = len(data)
+                if len_data > 200:
+                    for i in range(0, len_data, 200):
+                        json_data = json.dumps(data[i : i + 200])
+                        emit("syscall", { 'data' : json_data }, broadcast=True)
+                else:
+                    json_data = json.dumps(data)
+                    emit("syscall", { 'data' : json_data }, broadcast=True)
+            prev_df = df
+            time.sleep(2)
     syscalls = json.loads(syscalls, object_hook=lambda d: SimpleNamespace(**d))
     syscall_list = syscalls.syscalls
     f = open("../../data/syscalls.txt", "w")
     for sys in syscall_list:
         f.write(str(sys) + "\n")
     os.chdir('../../')
-    command = "sudo ./vmi -m sandbox -v " + vm + " -t " + time
+    command = "sudo ./vmi -m sandbox -v " + vm + " -t " + set_time
     thread = threading.Thread(target=run_command, args=(command, ))
     thread.start()
     os.chdir('web/server/')
+    thread_send = threading.Thread(target=send_events, args=(fname, ))
+    thread_send.start()
 
 @app.route('/uploadfile', methods=['POST'])
 def fileUpload():
@@ -270,6 +525,7 @@ def process_syscall(list):
     return data
 
 def educational_client(connection, fname):
+    print(os.getcwd())
     try:
         start = "**"
         end = 0
@@ -299,10 +555,6 @@ def educational_client(connection, fname):
                     data["id"] = id
                     id = id + 1
                     buffer.append(data)
-                    # if len(buffer) == 5:
-                    #     json_data = json.dumps(buffer)
-                    #     emit("syscall", { 'data' : json_data }, broadcast=True)
-                    #     buffer = []
                     csv_writer.writerow(data)
                     csv_file.flush()
                     syscall = []
@@ -313,5 +565,5 @@ def educational_client(connection, fname):
         return
                 
 if __name__ == '__main__':
-    socketIO.run(app, debug=True)
-    #socketIO.run(app)
+    #socketIO.run(app, debug=True)
+    socketIO.run(app)
